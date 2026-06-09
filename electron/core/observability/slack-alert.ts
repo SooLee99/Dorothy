@@ -1,0 +1,80 @@
+/**
+ * PR-Slack(A) — 아웃바운드 알림 평가(순수 로직). 발신/수집은 ~/.dorothy/scripts/slack-alert-tick.js.
+ *
+ * ★실측 신호 위에서만 알린다(self-report 금지): silent 지속·프로브 확인 한도·사람 호출(escalation)·정지 지속.
+ * ★알림 피로 방지: 임계(지속)·dedupe(activeKeys 재발송 금지)·해제 알림(조건 해소 시 '해결됨').
+ * ★발신 자체는 dispatch/관측과 무관(tick 격리). 순수 모듈(I/O 없음).
+ */
+
+export type Severity = 'info' | 'warn' | 'critical';
+
+export interface AlertSignal {
+  /** outputActivity=silent 인 에이전트와 지속 초. */
+  silentAgents: { agentId: string; silentSeconds: number }[];
+  /** 프로브로 ★확인된(예측 아님) limited provider 이름. */
+  providersLimited: string[];
+  /** safePause/EXTERNAL_PAUSE 지속 초(없으면 null). */
+  pausedSeconds: number | null;
+  /** 사람 호출 큐(최근 escalations) — kind+at 로 dedupe. */
+  escalations: { kind: string; detail: string; at: string }[];
+}
+
+export interface Alert { key: string; severity: Severity; text: string; }
+export interface AlertState { activeKeys: Record<string, { since: string }>; }
+
+export interface Thresholds { silentSeconds: number; pausedSeconds: number; }
+export const DEFAULT_THRESHOLDS: Thresholds = { silentSeconds: 600, pausedSeconds: 1800 }; // silent 10분, pause 30분
+
+/**
+ * 현재 신호로부터 발송/해제 알림과 다음 상태를 계산.
+ * fire   = 새로 충족된 조건(prev 에 없던 것) — dedupe(이미 활성이면 재발송 안 함).
+ * resolved = prev 에 있었으나 지금 해소된 조건 — '해결됨' 알림(떠 있는 경보 닫기).
+ */
+export function evaluateAlerts(
+  sig: AlertSignal,
+  prev: AlertState,
+  nowIso: string,
+  th: Thresholds = DEFAULT_THRESHOLDS,
+): { fire: Alert[]; resolved: Alert[]; state: AlertState } {
+  const want = new Map<string, Alert>();
+
+  for (const a of sig.silentAgents) {
+    if (a.silentSeconds >= th.silentSeconds) {
+      want.set(`silent:${a.agentId}`, { key: `silent:${a.agentId}`, severity: 'warn', text: `agent ${a.agentId} 출력 정지 ${Math.round(a.silentSeconds / 60)}분(silent)` });
+    }
+  }
+  for (const p of sig.providersLimited) {
+    want.set(`limited:${p}`, { key: `limited:${p}`, severity: 'warn', text: `provider ${p} 프로브 확인 한도(limited)` });
+  }
+  if (sig.pausedSeconds != null && sig.pausedSeconds >= th.pausedSeconds) {
+    want.set('pause', { key: 'pause', severity: 'warn', text: `시스템 정지 ${Math.round(sig.pausedSeconds / 60)}분 지속` });
+  }
+  for (const e of sig.escalations) {
+    const key = `esc:${e.kind}:${e.at}`;
+    want.set(key, { key, severity: 'critical', text: `사람/승인 필요: ${e.kind} — ${e.detail}` });
+  }
+
+  const prevKeys = new Set(Object.keys(prev?.activeKeys ?? {}));
+  const fire: Alert[] = [];
+  const resolved: Alert[] = [];
+
+  for (const [k, alert] of want) {
+    if (!prevKeys.has(k)) fire.push(alert); // 새 조건만(dedupe)
+  }
+  for (const k of prevKeys) {
+    if (!want.has(k)) resolved.push({ key: k, severity: 'info', text: `해결됨: ${k}` });
+  }
+
+  const activeKeys: Record<string, { since: string }> = {};
+  for (const [k] of want) activeKeys[k] = prev?.activeKeys?.[k] ?? { since: nowIso };
+
+  return { fire, resolved, state: { activeKeys } };
+}
+
+/** quiet hours(비긴급 야간 보류) — critical 은 항상 통과, info/warn 은 quiet 시간엔 보류. */
+export function passesQuietHours(severity: Severity, hour: number, quiet?: { startHour: number; endHour: number }): boolean {
+  if (severity === 'critical' || !quiet) return true;
+  const { startHour, endHour } = quiet;
+  const inQuiet = startHour <= endHour ? (hour >= startHour && hour < endHour) : (hour >= startHour || hour < endHour);
+  return !inQuiet;
+}
