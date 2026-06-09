@@ -18,9 +18,12 @@ import type { AgentStatus, WorktreeConfig, AgentCharacter, AppSettings, AgentPro
 import { buildFullPath } from '../utils/path-builder';
 import { decodeProjectPath } from '../utils/decode-project-path';
 import { getProvider, getAllProviders } from '../providers';
+import { resolveLaunchModel } from '../core/provider-model-compatibility';
 import { writeProgrammaticInput } from '../core/pty-manager';
+import { touchBusyLock } from '../core/busy-lock';
 import { extractStatusLine } from '../utils/ansi';
 import { scheduleTick } from '../utils/agents-tick';
+import { recordStart, recordOutput, recordExit } from '../core/observability/session-metrics';
 
 /**
  * Normalize a JIRA domain value to a full hostname.
@@ -344,6 +347,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
     const ptyId = uuidv4();
     ptyProcesses.set(ptyId, ptyProcess);
+    recordStart(ptyId, id, ptyProcess.pid); // PR-0a — 세션 계측 시작
 
     // Validate secondary project path if provided
     let secondaryProjectPath: string | undefined;
@@ -386,6 +390,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     // Forward PTY output to renderer
     // Guard: skip if this PTY was replaced (e.g. local provider recreates PTY in agent:start)
     ptyProcess.onData((data) => {
+      recordOutput(ptyId, data); // PR-0a — O(1) 계측
       const agent = agents.get(id);
       if (!agent || agent.ptyId !== ptyId) return;
 
@@ -413,6 +418,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
     });
 
     ptyProcess.onExit(({ exitCode }) => {
+      recordExit(ptyId, exitCode); // PR-0a — 종료 계측
       const agent = agents.get(id);
       // Skip status update if this PTY was replaced by a newer one
       if (agent && agent.ptyId === ptyId) {
@@ -444,6 +450,9 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
   }) => {
     const agent = agents.get(id);
     if (!agent) throw new Error('Agent not found');
+
+    // Dorothy 에이전트가 작업을 시작하면 즉시 busy-lock 을 찍어 Auto-Company 데몬이 사이클을 양보하게 한다.
+    touchBusyLock();
 
     // Validate model name from options to prevent shell injection
     if (options?.model && !/^[a-zA-Z0-9._\-\/:@]+$/.test(options.model)) {
@@ -529,10 +538,12 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
       const newPtyId = uuidv4();
       ptyProcesses.set(newPtyId, newPty);
+      recordStart(newPtyId, id, newPty.pid); // PR-0a — 세션 계측(local PTY 재생성)
       agent.ptyId = newPtyId;
 
       // Re-attach event handlers
       newPty.onData((data) => {
+        recordOutput(newPtyId, data); // PR-0a — O(1) 계측
         const agentData = agents.get(id);
         if (agentData) {
           agentData.output.push(data);
@@ -557,6 +568,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       });
 
       newPty.onExit(({ exitCode }) => {
+        recordExit(newPtyId, exitCode); // PR-0a — 종료 계측
         console.log(`Agent ${id} PTY exited with code ${exitCode}`);
         const agentData = agents.get(id);
         // Guard: only mutate if this PTY is still the active one (prevents race on restart)
@@ -613,7 +625,23 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
 
     const allAgentSkills = [...new Set([...(agent.skills || []), 'world-builder'])];
 
-    const resolvedModel = (provider !== 'local') ? (options?.model || agent.model) : undefined;
+    // Phase 6-M — hard gate: never pass a provider-incompatible model (e.g.
+    // Codex + Claude 'opus'). resolveLaunchModel strips incompatible models and
+    // falls back to the configured provider default only when it is compatible;
+    // otherwise the flag is omitted and the provider uses its own default. The
+    // stored agents.json model is never rewritten.
+    const rawModel = options?.model || agent.model;
+    const providerDefaultModel = provider === 'codex'
+      ? appSettingsForCommand.defaultCodexModel
+      : provider === 'claude'
+        ? appSettingsForCommand.defaultClaudeModel
+        : undefined;
+    const resolvedModel = (provider !== 'local')
+      ? resolveLaunchModel(provider, rawModel, providerDefaultModel)
+      : undefined;
+    if ((provider === 'codex' || provider === 'claude') && rawModel && !resolvedModel && rawModel !== 'default') {
+      console.warn(`[start] agent ${agent.id}: model "${rawModel}" incompatible with provider "${provider}" — launching without --model (provider default).`);
+    }
 
     const command = cliProvider.buildInteractiveCommand({
       binaryPath,
