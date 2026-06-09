@@ -71,6 +71,35 @@ export function evaluateAlerts(
   return { fire, resolved, state: { activeKeys } };
 }
 
+// ── 칸반 진행 보고(이벤트성, 상태 전이만 — 폭주 방지) ──────────────
+export interface KanbanTaskLite { id: string; title: string; column: string }
+
+/**
+ * 칸반 진행 이벤트(이전 스냅샷 대비 ★상태 전이만). 매 task 가 아니라 변화한 것만 → 폭주 방지.
+ * 첫 실행(prev 비어있음)은 ★스냅샷만 잡고 이벤트 0(이전 상태 모름 → 과거를 전부 알리지 않음).
+ *   ongoing 진입 = '진행 시작', done 진입 = '완료'. 그 외 전이는 보고 안 함(노이즈 억제).
+ */
+export function evaluateKanbanProgress(
+  prev: Record<string, string> | undefined,
+  curr: KanbanTaskLite[],
+): { events: Alert[]; state: Record<string, string> } {
+  const prevMap = prev ?? {};
+  const hadPrev = Object.keys(prevMap).length > 0;
+  const events: Alert[] = [];
+  const state: Record<string, string> = {};
+  for (const t of curr) {
+    state[t.id] = t.column;
+    if (!hadPrev) continue; // 첫 실행: 스냅샷만
+    const was = prevMap[t.id];
+    if (was && was !== t.column) {
+      const title = (t.title || t.id).slice(0, 80);
+      if (t.column === 'done') events.push({ key: `kanban-done:${t.id}`, severity: 'info', text: `✅ 완료: ${title}` });
+      else if (t.column === 'ongoing' && was !== 'ongoing') events.push({ key: `kanban-ongoing:${t.id}`, severity: 'info', text: `▶ 진행 시작: ${title}` });
+    }
+  }
+  return { events, state };
+}
+
 /** quiet hours(비긴급 야간 보류) — critical 은 항상 통과, info/warn 은 quiet 시간엔 보류. */
 export function passesQuietHours(severity: Severity, hour: number, quiet?: { startHour: number; endHour: number }): boolean {
   if (severity === 'critical' || !quiet) return true;

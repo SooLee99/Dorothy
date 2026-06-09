@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { evaluateAlerts, passesQuietHours, DEFAULT_THRESHOLDS, type AlertSignal, type AlertState } from '../../electron/core/observability/slack-alert';
+import { evaluateAlerts, passesQuietHours, evaluateKanbanProgress, DEFAULT_THRESHOLDS, type AlertSignal, type AlertState } from '../../electron/core/observability/slack-alert';
 
 const empty = (): AlertState => ({ activeKeys: {} });
 const sig = (over: Partial<AlertSignal> = {}): AlertSignal => ({ silentAgents: [], providersLimited: [], pausedSeconds: null, escalations: [], ...over });
@@ -41,6 +41,32 @@ describe('Slack(A) — evaluateAlerts (실측 신호 + 임계 + dedupe + 해제)
     const r = evaluateAlerts(sig({ escalations: [{ kind: 'SECTION0_MIGRATION_PARK', detail: 'V9', at: now }] }), empty(), now);
     expect(r.fire[0].severity).toBe('critical');
     expect(r.fire[0].text).toContain('사람/승인 필요');
+  });
+});
+
+describe('Slack(A) — evaluateKanbanProgress (★상태 전이만, 폭주 방지)', () => {
+  const tasks = (m: Record<string, string>) => Object.entries(m).map(([id, column]) => ({ id, title: `T-${id}`, column }));
+  it('첫 실행(prev 없음) → 스냅샷만, 이벤트 0(과거 전부 알리지 않음)', () => {
+    const r = evaluateKanbanProgress(undefined, tasks({ a: 'ongoing', b: 'done' }));
+    expect(r.events).toEqual([]);
+    expect(r.state).toEqual({ a: 'ongoing', b: 'done' });
+  });
+  it('ongoing 진입 → "진행 시작", done 진입 → "완료"', () => {
+    const prev = { a: 'planned', b: 'ongoing' };
+    const r = evaluateKanbanProgress(prev, tasks({ a: 'ongoing', b: 'done' }));
+    const keys = r.events.map((e) => e.key);
+    expect(keys).toContain('kanban-ongoing:a');
+    expect(keys).toContain('kanban-done:b');
+    expect(r.events.find((e) => e.key === 'kanban-done:b')!.text).toContain('완료');
+  });
+  it('★변화 없으면 이벤트 0(dedupe — 이미 done 은 재알림 안 함)', () => {
+    const prev = { a: 'done', b: 'ongoing' };
+    const r = evaluateKanbanProgress(prev, tasks({ a: 'done', b: 'ongoing' }));
+    expect(r.events).toEqual([]);
+  });
+  it('backlog→planned 같은 전이는 보고 안 함(노이즈 억제)', () => {
+    const r = evaluateKanbanProgress({ a: 'backlog' }, tasks({ a: 'planned' }));
+    expect(r.events).toEqual([]);
   });
 });
 
