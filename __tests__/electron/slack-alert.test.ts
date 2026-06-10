@@ -44,6 +44,44 @@ describe('Slack(A) — evaluateAlerts (실측 신호 + 임계 + dedupe + 해제)
   });
 });
 
+describe('Slack(A) — mismatch "도는 척"(MCP running ↔ 디스크 idle) 감지/알림만', () => {
+  it('mismatch < 임계(10분) → 알림 없음(짧은 상태 전파 지연 오탐 방지)', () => {
+    const r = evaluateAlerts(sig({ mismatchAgents: [{ agentId: 'qa-reviewer', mismatchSeconds: 120 }] }), empty(), now);
+    expect(r.fire).toEqual([]);
+  });
+  it('mismatch ≥ 임계 → warn + 두 상태원/무진행 문구', () => {
+    const r = evaluateAlerts(sig({ mismatchAgents: [{ agentId: 'qa-reviewer', mismatchSeconds: 8580 }] }), empty(), now);
+    expect(r.fire.length).toBe(1);
+    expect(r.fire[0].severity).toBe('warn');
+    expect(r.fire[0].key).toBe('mismatch:qa-reviewer');
+    expect(r.fire[0].text).toContain('qa-reviewer');
+    expect(r.fire[0].text).toContain('MCP running');
+    expect(r.fire[0].text).toContain('디스크 idle');
+    expect(r.fire[0].text).toContain('143분'); // 8580s ≈ 143분
+  });
+  it('silentHint → 보강 문구(·출력 silent) 포함', () => {
+    const r = evaluateAlerts(sig({ mismatchAgents: [{ agentId: 'qa-reviewer', mismatchSeconds: 700, silentHint: true }] }), empty(), now);
+    expect(r.fire[0].text).toContain('silent');
+  });
+  it('★dedupe: 이미 active 면 재발송 안 함', () => {
+    const prev: AlertState = { activeKeys: { 'mismatch:qa-reviewer': { since: now } } };
+    const r = evaluateAlerts(sig({ mismatchAgents: [{ agentId: 'qa-reviewer', mismatchSeconds: 9000 }] }), prev, now);
+    expect(r.fire).toEqual([]);
+    expect(r.state.activeKeys['mismatch:qa-reviewer']).toBeDefined();
+  });
+  it('★해제: 불일치 해소(예: 디스크/MCP 일치 복귀)되면 resolved 알림', () => {
+    const prev: AlertState = { activeKeys: { 'mismatch:qa-reviewer': { since: now } } };
+    const r = evaluateAlerts(sig({ mismatchAgents: [] }), prev, now);
+    expect(r.resolved.length).toBe(1);
+    expect(r.resolved[0].text).toContain('해결됨');
+    expect(r.state.activeKeys['mismatch:qa-reviewer']).toBeUndefined();
+  });
+  it('mismatchAgents 미제공(하위호환) → 안전(알림 없음)', () => {
+    const r = evaluateAlerts(sig(), empty(), now);
+    expect(r.fire).toEqual([]);
+  });
+});
+
 describe('Slack(A) — evaluateKanbanProgress (★상태 전이만, 폭주 방지)', () => {
   const tasks = (m: Record<string, string>) => Object.entries(m).map(([id, column]) => ({ id, title: `T-${id}`, column }));
   it('첫 실행(prev 없음) → 스냅샷만, 이벤트 0(과거 전부 알리지 않음)', () => {

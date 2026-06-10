@@ -17,13 +17,20 @@ export interface AlertSignal {
   pausedSeconds: number | null;
   /** 사람 호출 큐(최근 escalations) — kind+at 로 dedupe. */
   escalations: { kind: string; detail: string; at: string }[];
+  /**
+   * PR-감지A — "도는 척" 사각: MCP/대시보드(/api/agents in-memory)는 running 인데
+   * 디스크(agents.json)는 idle 인 ★두 상태원 불일치가 무진행으로 지속된 에이전트.
+   * mismatchSeconds = 디스크 lastActivity 이후 경과 초(무진행 지표). silentHint = 0a silent 관측 보강(선택).
+   * ★감지/알림 전용 — 상태(running/idle)·완료판정·dispatch 를 바꾸지 않는다(읽기만).
+   */
+  mismatchAgents?: { agentId: string; mismatchSeconds: number; silentHint?: boolean }[];
 }
 
 export interface Alert { key: string; severity: Severity; text: string; }
 export interface AlertState { activeKeys: Record<string, { since: string }>; }
 
-export interface Thresholds { silentSeconds: number; pausedSeconds: number; }
-export const DEFAULT_THRESHOLDS: Thresholds = { silentSeconds: 600, pausedSeconds: 1800 }; // silent 10분, pause 30분
+export interface Thresholds { silentSeconds: number; pausedSeconds: number; mismatchSeconds: number; }
+export const DEFAULT_THRESHOLDS: Thresholds = { silentSeconds: 600, pausedSeconds: 1800, mismatchSeconds: 600 }; // silent 10분, pause 30분, mismatch 10분(짧은 상태 전파 지연 오탐 방지)
 
 /**
  * 현재 신호로부터 발송/해제 알림과 다음 상태를 계산.
@@ -52,6 +59,19 @@ export function evaluateAlerts(
   for (const e of sig.escalations) {
     const key = `esc:${e.kind}:${e.at}`;
     want.set(key, { key, severity: 'critical', text: `사람/승인 필요: ${e.kind} — ${e.detail}` });
+  }
+  // PR-감지A — "도는 척"(MCP running ↔ 디스크 idle) 불일치가 ★임계 이상 무진행으로 지속될 때만 알림.
+  //   짧은 상태 전파 지연(정상 완료 직후)은 mismatchSeconds 임계로 거른다. dedupe/해제는 공통 메커니즘 재사용.
+  for (const m of sig.mismatchAgents ?? []) {
+    if (m.mismatchSeconds >= th.mismatchSeconds) {
+      const mins = Math.round(m.mismatchSeconds / 60);
+      const hint = m.silentHint ? '·출력 silent' : '';
+      want.set(`mismatch:${m.agentId}`, {
+        key: `mismatch:${m.agentId}`,
+        severity: 'warn',
+        text: `agent ${m.agentId}: MCP running 인데 디스크 idle·무진행 ${mins}분${hint}(빈 완료/조용한 실패 의심)`,
+      });
+    }
   }
 
   const prevKeys = new Set(Object.keys(prev?.activeKeys ?? {}));
