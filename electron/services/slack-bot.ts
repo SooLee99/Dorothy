@@ -7,6 +7,7 @@ import { formatSlackAgentStatus, isSuperAgent, getSuperAgent, getSuperAgentInstr
 import { agents, saveAgents, initAgentPty } from '../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
 import { getMainWindow } from '../core/window-manager';
+import { handleTasksChannelMessage } from './slack-kanban';
 import { app } from 'electron';
 
 // Slack bot state
@@ -167,6 +168,17 @@ export function initSlackBot(
       slackResponseChannel = channel;
       // Use thread_ts if replying in a thread, otherwise use the message ts to start a thread
       slackResponseThreadTs = msg.thread_ts || msg.ts || null;
+
+      // ── 채널 라우팅(1-B/2-A): #-tasks 채널은 ★빠른 단발 LLM → 칸반 create 경로로 분리.
+      //   ★PTY 주입(writeProgrammaticInput)을 ★타지 않으므로 바쁜 Super Agent 와 무관 = 30분 지연 없음.
+      //   tasksChannelId 는 런타임 설정(app-settings.json)에서 읽는다(없으면 no-op로 기존 경로 유지).
+      const tasksChannelId = (appSettings as unknown as { tasksChannelId?: string }).tasksChannelId;
+      if (tasksChannelId && channel === tasksChannelId) {
+        await handleTasksChannelMessage(channel, msg.text, say, appSettings, task => {
+          mainWindow?.webContents.send('kanban:task-created', task);
+        });
+        return;
+      }
 
       // Save channel for responses
       if (appSettings.slackChannelId !== channel) {
