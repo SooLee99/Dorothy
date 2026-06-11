@@ -119,7 +119,14 @@ export function startApiServer(
       || pathname === '/api/health'
       || pathname.startsWith('/api/hooks/')
       || pathname === '/api/kanban/complete'
-      || pathname === '/api/scheduler/status';
+      || pathname === '/api/scheduler/status'
+      // MVP Phase 4.5 — PM-tick / usage-scan scripts post here without a
+      // bearer token; the data they upload is local-only (rate limit
+      // signals) so the same exemption that covers /api/hooks/* applies.
+      || pathname.startsWith('/api/rate-limit/')
+      // Phase 5A — GitHub webhook callbacks. Auth happens via HMAC-SHA256
+      // signature inside the route handler, not the bearer header.
+      || pathname === '/api/github/webhook';
 
     if (!authExempt) {
       const authHeader = req.headers.authorization;
@@ -130,20 +137,32 @@ export function startApiServer(
       }
     }
 
+    // Phase 5C-A — paths that need the raw request bytes for cryptographic
+    // verification. The HTTP layer keeps the concatenated Buffer; everything
+    // else still gets the parsed JSON body for backwards compatibility.
+    const needsRawBody = pathname === '/api/github/webhook';
+
     // Parse body for POST and PUT requests
     let body: Record<string, unknown> = {};
+    let rawBody: Buffer | undefined = undefined;
     if (req.method === 'POST' || req.method === 'PUT') {
       try {
         const chunks: Buffer[] = [];
         for await (const chunk of req) {
           chunks.push(chunk);
         }
-        const data = Buffer.concat(chunks).toString();
+        const buf = Buffer.concat(chunks);
+        if (needsRawBody) {
+          // Hold on to the raw bytes so the route handler can HMAC them.
+          rawBody = buf;
+        }
+        const data = buf.toString();
         if (data) {
           body = JSON.parse(data);
         }
       } catch {
-        // Ignore parse errors
+        // Ignore parse errors — webhook handler still sees rawBody and can
+        // either reject the malformed payload or treat it as an empty body.
       }
     }
 
@@ -164,6 +183,7 @@ export function startApiServer(
           pathname,
           url,
           body,
+          rawBody,
           raw: req,
           res,
           params,

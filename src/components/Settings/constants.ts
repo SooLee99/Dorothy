@@ -11,6 +11,8 @@ import {
   Cloud,
   Cpu,
   Plug,
+  GitPullRequest,
+  ShieldCheck,
 } from 'lucide-react';
 import { SlackIcon } from './SlackIcon';
 import { JiraIcon } from './JiraIcon';
@@ -36,6 +38,10 @@ export const SECTIONS: { id: SettingsSection; label: string; icon: React.Compone
   { id: 'skills', label: 'Skills & Plugins', icon: Sparkles },
   { id: 'mcp', label: 'Custom MCP', icon: Plug },
   { id: 'cli', label: 'CLI Paths', icon: Terminal },
+  // Phase 5B — read-only GitHub webhook policy summary.
+  { id: 'github', label: 'GitHub Webhook', icon: GitPullRequest },
+  // Phase 5C-C — read-only automation feature-flag overview.
+  { id: 'automation', label: 'Automation Policy', icon: ShieldCheck },
   { id: 'system', label: 'System', icon: Monitor },
 ];
 

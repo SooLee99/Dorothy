@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import type { KanbanTask, KanbanColumn } from '@/types/kanban';
 import { getLabelColor } from '../constants';
+import { taskStageShort } from './TaskProcessStage';
 
 interface KanbanCardProps {
   task: KanbanTask;
@@ -208,6 +209,13 @@ export function KanbanCard({ task, onEdit, onDelete, onStart, onOpenTerminal, is
             <div className="flex items-center gap-1 text-green-500">
               <Bot className="w-3.5 h-3.5" />
             </div>
+          )}
+
+          {/* Phase 6-AT — 업무 프로세스 단계 배지 */}
+          {taskStageShort(task.assignedAgentId, task.column) && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-secondary text-muted-foreground" title="업무 프로세스 단계(추정)">
+              {taskStageShort(task.assignedAgentId, task.column)}
+            </span>
           )}
 
           {/* Skills count */}

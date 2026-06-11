@@ -664,6 +664,327 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getToken: () => ipcRenderer.invoke('api:getToken') as Promise<string>,
   },
 
+  // Dorothy 멀티회사/오토컴퍼니/하네스/승인 (packaged static-export 에서 API 라우트 대체)
+  dorothy: {
+    companies: {
+      get: () => ipcRenderer.invoke('dorothy:companies:get'),
+      select: (companyId: string) =>
+        ipcRenderer.invoke('dorothy:companies:mutate', { action: 'select', companyId }),
+      add: (company: { id: string; name: string; description?: string }) =>
+        ipcRenderer.invoke('dorothy:companies:mutate', { action: 'add', company }),
+      update: (
+        companyId: string,
+        company: { name?: string; description?: string; defaultEngineProfileId?: string },
+      ) => ipcRenderer.invoke('dorothy:companies:mutate', { action: 'update', companyId, company }),
+      mapAgent: (agentId: string, companyId: string, name?: string | null) =>
+        ipcRenderer.invoke('dorothy:companies:mutate', { action: 'mapAgent', agentId, companyId, name }),
+    },
+    autoCompany: {
+      get: () => ipcRenderer.invoke('dorothy:autoCompany:get'),
+      control: (action: string) => ipcRenderer.invoke('dorothy:autoCompany:control', { action }),
+    },
+    teamLoop: { get: () => ipcRenderer.invoke('dorothy:teamLoop:get') },
+    agentActivity: { get: () => ipcRenderer.invoke('dorothy:agentActivity:get') },
+    doc: { read: (path: string) => ipcRenderer.invoke('dorothy:doc:read', { path }) },
+    approvals: { get: () => ipcRenderer.invoke('dorothy:approvals:get') },
+    harness: { get: () => ipcRenderer.invoke('dorothy:harness:get') },
+    skill: {
+      link: (slug: string) => ipcRenderer.invoke('dorothy:skill:link', { action: 'link', slug }),
+      unlink: (slug: string) => ipcRenderer.invoke('dorothy:skill:link', { action: 'unlink', slug }),
+    },
+    // MVP Phase 1 — Run-centric model. Returns { ok, data?, error?, dbUnavailable? }
+    // on every call. UI should treat dbUnavailable=true as a graceful-degrade
+    // signal (no Run Board yet, fall back to legacy views).
+    runs: {
+      list: (options?: {
+        state?: string | string[];
+        source?: string;
+        kanbanTaskId?: string;
+        limit?: number;
+        offset?: number;
+      }) => ipcRenderer.invoke('dorothy:runs:list', options ?? {}),
+      get: (id: string) => ipcRenderer.invoke('dorothy:runs:get', id),
+      create: (input: {
+        title: string;
+        source: 'user' | 'kanban' | 'pm_tick' | 'automation' | 'schedule';
+        sourceRefId?: string | null;
+        priority?: 'low' | 'medium' | 'high' | 'critical';
+        state?: string;
+        kanbanTaskId?: string | null;
+        planId?: string | null;
+        comment?: string | null;
+      }) => ipcRenderer.invoke('dorothy:runs:create', input),
+      updateState: (params: {
+        id: string;
+        state: string;
+        blockedReason?: string;
+        errorReason?: string;
+        comment?: string;
+      }) => ipcRenderer.invoke('dorothy:runs:updateState', params),
+      // Phase 5E — operator-driven RunMode change.
+      updateMode: (params: {
+        id: string;
+        mode: string;
+        reason?: string;
+        source?: string;
+      }) => ipcRenderer.invoke('dorothy:runs:updateMode', params),
+    },
+    sessions: {
+      list: (options?: {
+        agentId?: string;
+        runId?: string;
+        runStepId?: string;
+        active?: boolean;
+        limit?: number;
+      }) => ipcRenderer.invoke('dorothy:sessions:list', options ?? {}),
+    },
+    // Phase 6-AE — read-only, masked live agent terminal output snapshots.
+    agentTerminal: {
+      listSnapshots: (options?: { lines?: number }) =>
+        ipcRenderer.invoke('dorothy:agentTerminal:listSnapshots', options ?? {}),
+      getSnapshot: (agentId: string, options?: { lines?: number }) =>
+        ipcRenderer.invoke('dorothy:agentTerminal:getSnapshot', { agentId, ...(options ?? {}) }),
+    },
+    artifacts: {
+      list: (options?: {
+        runId?: string;
+        runStepId?: string;
+        type?: string;
+        producedByAgentId?: string;
+        limit?: number;
+      }) => ipcRenderer.invoke('dorothy:artifacts:list', options ?? {}),
+      // Phase 5C-C — single + bulk lookups for the ImprovementSignal evidence preview.
+      get: (id: string) => ipcRenderer.invoke('dorothy:artifacts:get', id),
+      listByIds: (ids: string[]) => ipcRenderer.invoke('dorothy:artifacts:listByIds', ids),
+    },
+    handoffs: {
+      list: (params: { runId: string }) =>
+        ipcRenderer.invoke('dorothy:handoffs:list', params),
+    },
+    plans: {
+      list: (options?: { runId?: string; state?: string; limit?: number }) =>
+        ipcRenderer.invoke('dorothy:plans:list', options ?? {}),
+      get: (id: string) => ipcRenderer.invoke('dorothy:plans:get', id),
+      // Phase 4 — validate runs the 5-check policy and may immediately mark
+      // the plan approved/pending/rejected. Returns { verdict, ... }.
+      validate: (planId: string) => ipcRenderer.invoke('dorothy:plans:validate', planId),
+    },
+    // Phase 3 — push the orchestrator forward. `advance` works on one Run;
+    // `advanceAll` walks every advanceable Run (used by the periodic tick).
+    orchestrator: {
+      advance: (runId: string) => ipcRenderer.invoke('dorothy:runs:advance', runId),
+      advanceAll: () => ipcRenderer.invoke('dorothy:runs:advanceAll'),
+    },
+    // Phase 4 — rate-limit ↔ Run bridge.
+    rateLimit: {
+      list: (options?: { engine?: string; active?: boolean; limit?: number }) =>
+        ipcRenderer.invoke('dorothy:rateLimit:list', options ?? {}),
+      record: (input: {
+        engine: string;
+        source: string;
+        detectedAt?: string;
+        resetAt?: string | null;
+        message?: string | null;
+        rawRef?: string | null;
+        affectedRunIds?: string[];
+      }) => ipcRenderer.invoke('dorothy:rateLimit:record', input),
+      resume: (params: { eventId: string; engine?: string }) =>
+        ipcRenderer.invoke('dorothy:rateLimit:resume', params),
+      // Phase 5C-B
+      listScheduled: (options?: { limit?: number }) =>
+        ipcRenderer.invoke('dorothy:rateLimit:listScheduled', options ?? {}),
+      resumeNow: (eventId: string) =>
+        ipcRenderer.invoke('dorothy:rateLimit:resumeNow', eventId),
+      schedulerStatus: () => ipcRenderer.invoke('dorothy:rateLimit:schedulerStatus'),
+    },
+    // Phase 5D — Run Mode policy + router.
+    runModes: {
+      policies: () => ipcRenderer.invoke('dorothy:runModes:policies'),
+      decide: (text: string) => ipcRenderer.invoke('dorothy:runModes:decide', text),
+    },
+    // Phase 5C-B — ImprovementSignal.
+    improvements: {
+      list: (options?: { status?: string | string[]; source?: string; runId?: string; severity?: string; limit?: number; offset?: number }) =>
+        ipcRenderer.invoke('dorothy:improvements:list', options ?? {}),
+      listByRun: (runId: string) =>
+        ipcRenderer.invoke('dorothy:improvements:listByRun', runId),
+      updateStatus: (params: { id: string; status: string; note?: string }) =>
+        ipcRenderer.invoke('dorothy:improvements:updateStatus', params),
+      // Phase 5E — operator-driven conversion to a KanbanTask.
+      convertToTask: (params: {
+        id: string;
+        column?: string;
+        projectId?: string;
+        projectPath?: string;
+      }) => ipcRenderer.invoke('dorothy:improvements:convertToTask', params),
+    },
+    // Phase 5A — PR / CI tracking. Read-only from the renderer; writes happen
+    // through the GitHub webhook receiver (POST /api/github/webhook).
+    pr: {
+      list: (options?: {
+        state?: string | string[];
+        runId?: string;
+        owner?: string;
+        repo?: string;
+        limit?: number;
+        offset?: number;
+      }) => ipcRenderer.invoke('dorothy:pr:list', options ?? {}),
+      get: (id: string) => ipcRenderer.invoke('dorothy:pr:get', id),
+      listByRun: (runId: string) => ipcRenderer.invoke('dorothy:pr:listByRun', runId),
+    },
+    ci: {
+      list: (options?: {
+        state?: string | string[];
+        runId?: string;
+        pullRequestId?: string;
+        workflow?: string;
+        limit?: number;
+        offset?: number;
+      }) => ipcRenderer.invoke('dorothy:ci:list', options ?? {}),
+      get: (id: string) => ipcRenderer.invoke('dorothy:ci:get', id),
+      listByRun: (runId: string) => ipcRenderer.invoke('dorothy:ci:listByRun', runId),
+      listByPullRequest: (pullRequestId: string) =>
+        ipcRenderer.invoke('dorothy:ci:listByPullRequest', pullRequestId),
+    },
+    // Phase 5F — Hook Event Bus reads.
+    hookEvents: {
+      list: (options?: Record<string, unknown>) =>
+        ipcRenderer.invoke('dorothy:hookEvents:list', options ?? {}),
+      listByRun: (runId: string, options?: Record<string, unknown>) =>
+        ipcRenderer.invoke('dorothy:hookEvents:listByRun', runId, options ?? {}),
+      listBySession: (agentSessionId: string, options?: Record<string, unknown>) =>
+        ipcRenderer.invoke('dorothy:hookEvents:listBySession', agentSessionId, options ?? {}),
+      listRecent: (options?: Record<string, unknown>) =>
+        ipcRenderer.invoke('dorothy:hookEvents:listRecent', options ?? {}),
+    },
+    // Phase 6-A — Diagnostic reads + write surface.
+    diagnostics: {
+      list: (options?: Record<string, unknown>) =>
+        ipcRenderer.invoke('dorothy:diagnostics:list', options ?? {}),
+      listByRun: (runId: string, options?: Record<string, unknown>) =>
+        ipcRenderer.invoke('dorothy:diagnostics:listByRun', runId, options ?? {}),
+      get: (id: string) =>
+        ipcRenderer.invoke('dorothy:diagnostics:get', id),
+      updateStatus: (params: { id: string; status: string; note?: string }) =>
+        ipcRenderer.invoke('dorothy:diagnostics:updateStatus', params),
+      convertToImprovement: (params: { id: string }) =>
+        ipcRenderer.invoke('dorothy:diagnostics:convertToImprovement', params),
+      counts: () => ipcRenderer.invoke('dorothy:diagnostics:counts'),
+    },
+    // Phase 6-B — AgentWorkflowProgress reads.
+    workflowProgress: {
+      list: (options?: Record<string, unknown>) =>
+        ipcRenderer.invoke('dorothy:workflowProgress:list', options ?? {}),
+      listByRun: (runId: string, options?: Record<string, unknown>) =>
+        ipcRenderer.invoke('dorothy:workflowProgress:listByRun', runId, options ?? {}),
+      listBySession: (agentSessionId: string, options?: Record<string, unknown>) =>
+        ipcRenderer.invoke('dorothy:workflowProgress:listBySession', agentSessionId, options ?? {}),
+      get: (id: string) =>
+        ipcRenderer.invoke('dorothy:workflowProgress:get', id),
+      recomputeByRun: (runId: string) =>
+        ipcRenderer.invoke('dorothy:workflowProgress:recomputeByRun', runId),
+      counts: () => ipcRenderer.invoke('dorothy:workflowProgress:counts'),
+    },
+    // Phase 6-D — SkillCandidate reads + light write surface.
+    skillCandidates: {
+      list: (options?: Record<string, unknown>) =>
+        ipcRenderer.invoke('dorothy:skillCandidates:list', options ?? {}),
+      listByRun: (runId: string, options?: Record<string, unknown>) =>
+        ipcRenderer.invoke('dorothy:skillCandidates:listByRun', runId, options ?? {}),
+      get: (id: string) => ipcRenderer.invoke('dorothy:skillCandidates:get', id),
+      updateStatus: (params: { id: string; status: string; note?: string }) =>
+        ipcRenderer.invoke('dorothy:skillCandidates:updateStatus', params),
+      fromImprovementSignal: (params: { id: string }) =>
+        ipcRenderer.invoke('dorothy:skillCandidates:fromImprovementSignal', params),
+      fromDiagnostic: (params: { id: string }) =>
+        ipcRenderer.invoke('dorothy:skillCandidates:fromDiagnostic', params),
+      convertToTask: (params: { id: string; column?: string }) =>
+        ipcRenderer.invoke('dorothy:skillCandidates:convertToTask', params),
+      counts: () => ipcRenderer.invoke('dorothy:skillCandidates:counts'),
+    },
+    // Phase 6-W — App Factory (planning-only; preview never creates Kanban/code).
+    appFactory: {
+      listCandidates: (options?: Record<string, unknown>) =>
+        ipcRenderer.invoke('dorothy:appFactory:listCandidates', options ?? {}),
+      getCandidate: (id: string) => ipcRenderer.invoke('dorothy:appFactory:getCandidate', id),
+      createCandidate: (input: Record<string, unknown>) =>
+        ipcRenderer.invoke('dorothy:appFactory:createCandidate', input),
+      updateCandidateStatus: (params: { id: string; status: string }) =>
+        ipcRenderer.invoke('dorothy:appFactory:updateCandidateStatus', params),
+      generatePlanPreview: (params: { appCandidateId: string }) =>
+        ipcRenderer.invoke('dorothy:appFactory:generatePlanPreview', params),
+      createPlan: (params: { appCandidateId: string; status?: string }) =>
+        ipcRenderer.invoke('dorothy:appFactory:createPlan', params),
+      listPlans: (options?: Record<string, unknown>) =>
+        ipcRenderer.invoke('dorothy:appFactory:listPlans', options ?? {}),
+      getPlan: (id: string) => ipcRenderer.invoke('dorothy:appFactory:getPlan', id),
+      counts: () => ipcRenderer.invoke('dorothy:appFactory:counts'),
+    },
+    // Phase 6-E — Agent Definition Registry / Idle Reason / Communication.
+    agentDefinitions: {
+      list: (options?: { extraProjectPaths?: string[]; includeUserDir?: boolean }) =>
+        ipcRenderer.invoke('dorothy:agentDefinitions:list', options ?? {}),
+      get: (agentId: string) => ipcRenderer.invoke('dorothy:agentDefinitions:get', agentId),
+      rescan: (options?: { extraProjectPaths?: string[]; includeUserDir?: boolean }) =>
+        ipcRenderer.invoke('dorothy:agentDefinitions:rescan', options ?? {}),
+      // Phase 6-H — reload agents.json into the live agent manager (no restart).
+      reloadLiveAgents: (params?: { reason?: string }) =>
+        ipcRenderer.invoke('dorothy:agentDefinitions:reloadLiveAgents', params ?? {}),
+    },
+    agentIdle: {
+      list: (options?: { agentIds?: string[] }) =>
+        ipcRenderer.invoke('dorothy:agentIdle:list', options ?? {}),
+      get: (agentId: string) => ipcRenderer.invoke('dorothy:agentIdle:get', agentId),
+    },
+    agentCommunication: {
+      listByRun: (runId: string, options?: { limit?: number }) =>
+        ipcRenderer.invoke('dorothy:agentCommunication:listByRun', runId, options ?? {}),
+      listByAgent: (agentId: string, options?: { limit?: number; runIds?: string[] }) =>
+        ipcRenderer.invoke('dorothy:agentCommunication:listByAgent', agentId, options ?? {}),
+      listRecent: (options?: { limit?: number }) =>
+        ipcRenderer.invoke('dorothy:agentCommunication:listRecent', options ?? {}),
+    },
+    // Phase 6-G — Agent Definition manual registration.
+    agentRegistration: {
+      listCandidates: () =>
+        ipcRenderer.invoke('dorothy:agentRegistration:listCandidates'),
+      preview: (params: { agentDefinitionId: string; options?: Record<string, unknown> }) =>
+        ipcRenderer.invoke('dorothy:agentRegistration:preview', params),
+      register: (params: { agentDefinitionId: string; options?: Record<string, unknown>; confirm?: boolean }) =>
+        ipcRenderer.invoke('dorothy:agentRegistration:register', params),
+    },
+    // Phase 6-J — dispatch readiness (dry-run diagnosis).
+    agentDispatch: {
+      listReadiness: (options?: { agentIds?: string[] }) =>
+        ipcRenderer.invoke('dorothy:agentDispatch:listReadiness', options ?? {}),
+      listReadinessByRun: (runId: string) =>
+        ipcRenderer.invoke('dorothy:agentDispatch:listReadinessByRun', runId),
+    },
+    // Phase 6-K — Claude launch readiness (binary + path validation).
+    claude: {
+      launchReadiness: () => ipcRenderer.invoke('dorothy:claude:launchReadiness'),
+    },
+    // Phase 6-M — Codex runtime readiness + stale session detection.
+    codex: {
+      runtimeReadiness: () => ipcRenderer.invoke('dorothy:codex:runtimeReadiness'),
+    },
+    staleSessions: {
+      list: () => ipcRenderer.invoke('dorothy:sessions:staleModelMismatch'),
+    },
+    // Phase 6-Q — batch warm-up + Codex model normalization.
+    warmup: {
+      targets: (options?: { agentIds?: string[] }) =>
+        ipcRenderer.invoke('dorothy:agents:warmupTargets', options ?? {}),
+      all: (params: { agentIds?: string[]; confirm?: boolean }) =>
+        ipcRenderer.invoke('dorothy:agents:warmupAll', params),
+    },
+    codexNormalize: {
+      preview: () => ipcRenderer.invoke('dorothy:agents:normalizeCodexModelsPreview'),
+      apply: (params: { confirm?: boolean }) =>
+        ipcRenderer.invoke('dorothy:agents:normalizeCodexModels', params),
+    },
+  },
+
   // Tray menu events
   tray: {
     onFocusAgent: (callback: (agentId: string) => void) => {

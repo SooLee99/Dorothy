@@ -13,6 +13,11 @@ export const VAULT_DIR = path.join(DATA_DIR, 'vault');
 export const VAULT_DB_FILE = path.join(DATA_DIR, 'vault.db');
 export const API_TOKEN_FILE = path.join(DATA_DIR, 'api-token');
 
+// Dorothy MVP — separate SQLite DB for Run / RunStep / AgentSession etc.
+// Kept distinct from vault.db so the rebuilt model layer cannot accidentally
+// change Vault's schema. See docs/rebuild-target-mvp/mvp-data-models.md.
+export const DOROTHY_DB_FILE = path.join(DATA_DIR, 'dorothy.db');
+
 export const GITHUB_REPO = 'Charlie85270/dorothy';
 
 export const MIME_TYPES: { [key: string]: string } = {

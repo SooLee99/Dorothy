@@ -20,6 +20,20 @@ import {
   Brain,
   Gift,
   Heart,
+  Workflow,
+  ShieldCheck,
+  Network,
+  Building2,
+  Users,
+  PlayCircle,
+  TerminalSquare,
+  GitPullRequest,
+  FileText,
+  Lightbulb,
+  Stethoscope,
+  Layers,
+  Factory,
+  Plug,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
@@ -32,20 +46,46 @@ import { useStore } from '@/store';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-const navItems = [
-  { href: '/', icon: LayoutDashboard, label: 'Dashboard', shortcut: '1' },
-  { href: '/agents', icon: Bot, label: 'Agents', shortcut: '2' },
-  { href: '/templates', icon: Sparkles, label: 'Templates', shortcut: 'T' },
-  { href: '/kanban', icon: Columns, label: 'Kanban', shortcut: '3' },
-  { href: '/vault', icon: Archive, label: 'Vault', shortcut: '4' },
-  { href: '/projects', icon: FolderKanban, label: 'Projects', shortcut: '5' },
-  { href: '/skills', icon: Sparkles, label: 'Skills', shortcut: '6' },
-  { href: '/plugins', icon: Puzzle, label: 'Plugins', shortcut: '7' },
-  { href: '/recurring-tasks', icon: CalendarClock, label: 'Scheduled Tasks', shortcut: '8' },
-  { href: '/automations', icon: Zap, label: 'Automations', shortcut: '9' },
-  { href: '/usage', icon: BarChart2, label: 'Usage', shortcut: '0' },
-  { href: '/memory', icon: Brain, label: 'Memory', shortcut: 'M' },
-  { href: '/pallet-town', icon: PalletTownIcon, label: 'ClaudeMon' },
+// Phase 6-AL — 기능/경로 삭제 없이 그룹·순서·라벨만 정리(기본/운영/고급).
+type NavIcon = React.ComponentType<{ className?: string }>;
+type NavEntry =
+  | { section: string }
+  | { href: string; icon: NavIcon; label: string; shortcut?: string };
+
+const navItems: NavEntry[] = [
+  { section: '자동개발' },
+  { href: '/', icon: LayoutDashboard, label: '대시보드', shortcut: '1' },
+  { href: '/projects', icon: FolderKanban, label: '프로젝트', shortcut: '5' },
+  { href: '/kanban', icon: Columns, label: '칸반', shortcut: '3' },
+  { href: '/sessions', icon: TerminalSquare, label: '에이전트 터미널' },
+  { href: '/app-factory', icon: Factory, label: '앱 팩토리' },
+
+  { section: '운영' },
+  { href: '/agents', icon: Bot, label: '에이전트', shortcut: '2' },
+  { href: '/reports', icon: FileText, label: '리포트' },
+  { href: '/pr', icon: GitPullRequest, label: '풀 리퀘스트' },
+  { href: '/approvals', icon: ShieldCheck, label: '승인 대기' },
+  { href: '/auto-company', icon: Workflow, label: '오토컴퍼니' },
+  { href: '/automations', icon: Zap, label: '자동화', shortcut: '9' },
+  { href: '/recurring-tasks', icon: CalendarClock, label: '스케줄', shortcut: '8' },
+  { href: '/agent-activity', icon: Users, label: '에이전트 작업' },
+  { href: '/agent-workflows', icon: Workflow, label: '에이전트 워크플로우' },
+  { href: '/companies', icon: Building2, label: '회사' },
+  { href: '/templates', icon: Sparkles, label: '템플릿', shortcut: 'T' },
+  { href: '/integrations/github', icon: Plug, label: '연동 설정' },
+
+  { section: '고급 / 진단' },
+  { href: '/runs', icon: PlayCircle, label: '실행 기록' },
+  { href: '/diagnostics', icon: Stethoscope, label: '진단' },
+  { href: '/improvements', icon: Lightbulb, label: '개선' },
+  { href: '/skill-candidates', icon: Layers, label: '스킬 후보' },
+  { href: '/harness', icon: Network, label: '하네스' },
+  { href: '/vault', icon: Archive, label: '볼트', shortcut: '4' },
+  { href: '/memory', icon: Brain, label: '메모리', shortcut: 'M' },
+  { href: '/skills', icon: Sparkles, label: '스킬', shortcut: '6' },
+  { href: '/plugins', icon: Puzzle, label: '플러그인', shortcut: '7' },
+  { href: '/usage', icon: BarChart2, label: '사용량', shortcut: '0' },
+  { href: '/pallet-town', icon: PalletTownIcon, label: '클로드몬' },
 ];
 
 interface SidebarProps {
@@ -109,7 +149,16 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
 
         {/* Navigation */}
         <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-          {navItems.map((item) => {
+          {navItems.map((item, idx) => {
+            if ('section' in item) {
+              return showLabels ? (
+                <div key={`sec-${item.section}`} className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+                  {item.section}
+                </div>
+              ) : (
+                <div key={`sec-${idx}`} className="my-2 border-t border-border/60" />
+              );
+            }
             const isActive = item.href === '/'
               ? pathname === '/'
               : pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -166,7 +215,7 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
                     <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full" />
                   )}
                 </div>
-                <span className="text-sm flex-1">What&apos;s New</span>
+                <span className="text-sm flex-1">새 소식</span>
                 {whatsNewHasNew && (
                   <span className="min-w-[20px] h-[20px] flex items-center justify-center text-[10px] font-bold bg-red-500 text-white rounded-full px-1">
                     1
@@ -178,7 +227,7 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
                   <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-green-500 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
                 </span>
-                <span>Connected</span>
+                <span>연결됨</span>
               </div>
             </>
           )}
@@ -214,12 +263,12 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
             `}
           >
             <Settings className="w-5 h-5" />
-            {showLabels && <span className="text-sm">Settings</span>}
+            {showLabels && <span className="text-sm">설정</span>}
           </Link>
           <Link
             href="/support"
-            aria-label="Support"
-            title="Support"
+            aria-label="지원"
+            title="지원"
             className={`
               flex items-center gap-3 px-5 py-3 transition-colors
               ${pathname === '/support'
@@ -229,7 +278,7 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
             `}
           >
             <Heart className="w-5 h-5 text-red-500" fill="currentColor" />
-            {showLabels && <span className="text-sm">Support</span>}
+            {showLabels && <span className="text-sm">지원</span>}
           </Link>
           <button
             onClick={toggleDarkMode}
@@ -247,7 +296,7 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
             ) : (
               <>
                 <ChevronLeft className="w-5 h-5" />
-                <span className="text-sm">Collapse</span>
+                <span className="text-sm">접기</span>
               </>
             )}
           </button>
@@ -280,7 +329,14 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
 
           {/* Navigation */}
           <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-            {navItems.map((item) => {
+            {navItems.map((item, idx) => {
+              if ('section' in item) {
+                return (
+                  <div key={`msec-${idx}`} className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+                    {item.section}
+                  </div>
+                );
+              }
               const isActive = item.href === '/'
                 ? pathname === '/'
                 : pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -343,7 +399,7 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
                 </span>
-                <span>Connected</span>
+                <span>연결됨</span>
               </div>
             </div>
           </div>
@@ -362,7 +418,7 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
               `}
             >
               <Settings className="w-5 h-5" />
-              <span className="text-sm">Settings</span>
+              <span className="text-sm">설정</span>
             </Link>
             <Link
               href="/support"
@@ -376,7 +432,7 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
               `}
             >
               <Heart className="w-5 h-5 text-red-500" fill="currentColor" />
-              <span className="text-sm">Support</span>
+              <span className="text-sm">지원</span>
             </Link>
             <button
               onClick={toggleDarkMode}

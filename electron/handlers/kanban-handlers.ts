@@ -4,6 +4,12 @@ import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { KANBAN_FILE, DATA_DIR } from '../constants';
 import { generateTaskFromPrompt } from '../utils/kanban-generate';
+// MVP Phase 3 / 4.5 — opportunistic Plan/Run mirror + Plan-aware routing.
+// Best-effort: every call below is wrapped so a failure here cannot break
+// the legacy auto-spawn flow.
+import { onKanbanTaskChanged, getRunForKanbanTask } from '../services/dorothy/kanban-task-adapter';
+import { listPlansByRun } from '../services/dorothy/plan-service';
+import { selectAgentForOwnerRole, type LiveAgentSlim } from '../services/dorothy/agent-routing';
 
 // ============================================
 // Kanban Board IPC handlers
@@ -72,6 +78,12 @@ export interface KanbanHandlerDependencies {
   stopAgent: (agentId: string) => Promise<void>;
   deleteAgent: (agentId: string) => Promise<void>;
   getAgentOutput: (agentId: string) => string[];
+  /**
+   * MVP Phase 4.5 — live agent snapshot for Plan-aware ownerAgentId routing.
+   * Optional so older callers (tests, legacy boot) keep working; when absent
+   * we silently fall back to `findMatchingAgent` only.
+   */
+  getLiveAgents?: () => LiveAgentSlim[];
 }
 
 let deps: KanbanHandlerDependencies | null = null;
@@ -102,6 +114,33 @@ function saveTasks(tasks: KanbanTask[]): void {
 
 function emitTaskEvent(eventName: string, task: KanbanTask): void {
   deps?.getMainWindow()?.webContents.send(eventName, task);
+}
+
+/**
+ * MVP Phase 4.5 — read the Plan attached to a KanbanTask (via the
+ * dorothy.db mirror) and return the first pending task's ownerAgentId.
+ *
+ * The lookup is deliberately conservative:
+ *   - No mirror Run → null (silent — legacy path runs).
+ *   - Multiple Plans → newest by updatedAt.
+ *   - No tasks[] or no ownerAgentId → null.
+ *
+ * Returns null on any error so callers can simply fall back to the
+ * legacy findMatchingAgent path.
+ */
+function pickOwnerAgentForKanbanTask(kanbanTaskId: string): string | null {
+  try {
+    const run = getRunForKanbanTask(kanbanTaskId);
+    if (!run) return null;
+    const plans = listPlansByRun(run.id);
+    if (plans.length === 0) return null;
+    const plan = [...plans].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+    const firstTask = plan.tasks?.find(t => !!t.ownerAgentId);
+    return firstTask?.ownerAgentId ?? null;
+  } catch (err) {
+    console.warn('[kanban] pickOwnerAgentForKanbanTask failed:', err);
+    return null;
+  }
 }
 
 /**
@@ -259,13 +298,52 @@ export function registerKanbanHandlers(dependencies: KanbanHandlerDependencies):
       let agentSpawned = false;
       let agentId: string | null = null;
 
+      // MVP Phase 3 — mirror the kanban column change into dorothy.db so the
+      // Run Board reflects the user action. The adapter is tolerant of a
+      // missing DB and never throws.
+      try {
+        onKanbanTaskChanged({
+          id: task.id,
+          title: task.title,
+          column: task.column,
+          priority: task.priority,
+        }, { source: 'kanban' });
+      } catch (mirrorErr) {
+        console.warn('[kanban] dorothy Run mirror failed (ignored):', mirrorErr);
+      }
+
       // Trigger automation when moving to "planned"
       if (targetColumn === 'planned' && previousColumn !== 'planned' && deps) {
         console.log(`Task "${task.title}" moved to planned - triggering automation`);
 
         try {
-          // Try to find a matching agent first
-          agentId = await deps.findMatchingAgent(task.projectPath, task.requiredSkills);
+          // MVP Phase 4.5 — Plan-aware routing.
+          //   Priority 1: Plan.tasks[*].ownerAgentId → matching live agent.
+          //   Priority 2 (fallback): legacy `findMatchingAgent`.
+          //   Priority 3 (no match): `createAgentForTask` like before.
+          //
+          // The lookup is wrapped end-to-end so a DB/routing failure cannot
+          // skip the legacy path that was working before this wedge.
+          try {
+            const ownerAgentId = pickOwnerAgentForKanbanTask(task.id);
+            if (ownerAgentId && deps.getLiveAgents) {
+              const liveAgents = deps.getLiveAgents();
+              const liveId = selectAgentForOwnerRole(ownerAgentId, liveAgents);
+              if (liveId) {
+                agentId = liveId;
+                console.log(`[kanban] Plan ownerAgentId=${ownerAgentId} matched live agent ${liveId} — using that.`);
+              } else {
+                console.log(`[kanban] Plan ownerAgentId=${ownerAgentId} has no idle live match; falling back to findMatchingAgent.`);
+              }
+            }
+          } catch (planLookupErr) {
+            console.warn('[kanban] Plan-aware routing failed (falling back):', planLookupErr);
+          }
+
+          // Try to find a matching agent first (legacy fallback)
+          if (!agentId) {
+            agentId = await deps.findMatchingAgent(task.projectPath, task.requiredSkills);
+          }
 
           if (!agentId) {
             // Create a new agent for this task

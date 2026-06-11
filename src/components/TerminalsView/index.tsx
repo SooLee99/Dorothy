@@ -30,9 +30,18 @@ import 'react-resizable/css/styles.css';
 import dynamic from 'next/dynamic';
 const NewChatModal = dynamic(() => import('@/components/NewChatModal'), { ssr: false });
 
-export default function TerminalsView() {
+interface TerminalsViewProps {
+  // 회사별 보기 컨텍스트 (Dashboard 에서 전달). 없으면 전체 표시.
+  companyView?: string;
+  agentCompanyMap?: Record<string, string | null>;
+}
+
+export default function TerminalsView({
+  companyView = '__all__',
+  agentCompanyMap = {},
+}: TerminalsViewProps = {}) {
   const {
-    agents,
+    agents: agentsAll,
     isLoading,
     startAgent,
     stopAgent,
@@ -42,6 +51,13 @@ export default function TerminalsView() {
   } = useElectronAgents();
   const { projects, openFolderDialog } = useElectronFS();
   const { installedSkills, refresh: refreshSkills } = useElectronSkills();
+
+  // 회사별 보기: 선택 회사의 에이전트만 (미분류 = 매핑 없음, 전체 = 전부). agents.json 미변경.
+  const agents = useMemo(() => {
+    if (!companyView || companyView === '__all__') return agentsAll;
+    if (companyView === '__unmapped__') return agentsAll.filter((a) => !(a.id in agentCompanyMap));
+    return agentsAll.filter((a) => agentCompanyMap[a.id] === companyView);
+  }, [agentsAll, companyView, agentCompanyMap]);
 
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [focusedPanelId, setFocusedPanelId] = useState<string | null>(null);
@@ -89,11 +105,25 @@ export default function TerminalsView() {
         .filter((a): a is NonNullable<typeof a> => !!a);
     }
     if (tabManager.isProjectTabActive && tabManager.activeProjectPath) {
-      // Project tab: all agents for that project
-      return agents.filter(a => a.projectPath === tabManager.activeProjectPath);
+      // Project tab: agents for that project, with per-slot overrides applied
+      // (사용자가 패널 에이전트를 교체하면 projectOverrides 로 대체 표시).
+      const base = agents.filter(a => a.projectPath === tabManager.activeProjectPath);
+      const overrides = tabManager.projectOverrides[tabManager.activeProjectPath];
+      if (!overrides || Object.keys(overrides).length === 0) return base;
+      const agentMap = new Map(agents.map(a => [a.id, a]));
+      const seen = new Set<string>();
+      const out: typeof base = [];
+      for (const a of base) {
+        const replId = overrides[a.id];
+        const chosen = replId ? (agentMap.get(replId) ?? a) : a;
+        if (seen.has(chosen.id)) continue; // 중복 패널 방지
+        seen.add(chosen.id);
+        out.push(chosen);
+      }
+      return out;
     }
     return [];
-  }, [agents, tabManager.isCustomTabActive, tabManager.isProjectTabActive, tabManager.activeCustomTab, tabManager.activeProjectPath]);
+  }, [agents, tabManager.isCustomTabActive, tabManager.isProjectTabActive, tabManager.activeCustomTab, tabManager.activeProjectPath, tabManager.projectOverrides]);
 
   // Derive grid preset and editable state
   const gridPreset: LayoutPreset = tabManager.activeCustomTab?.layout || '3x3';
@@ -210,6 +240,16 @@ export default function TerminalsView() {
   const handleAddAgentToTab = useCallback((agentId: string) => {
     if (tabManager.activeCustomTab) {
       tabManager.addAgentToTab(tabManager.activeCustomTab.id, agentId);
+    }
+  }, [tabManager]);
+
+  // Change which agent a panel runs — swaps the agent in place.
+  // 커스텀 탭: 탭 agentIds 슬롯 교체 / 프로젝트 탭: projectOverrides 로 슬롯 교체.
+  const handleChangeAgent = useCallback((oldAgentId: string, newAgentId: string) => {
+    if (tabManager.isCustomTabActive && tabManager.activeCustomTab) {
+      tabManager.changeAgentInTab(tabManager.activeCustomTab.id, oldAgentId, newAgentId);
+    } else if (tabManager.isProjectTabActive && tabManager.activeProjectPath) {
+      tabManager.changeAgentInProject(tabManager.activeProjectPath, oldAgentId, newAgentId);
     }
   }, [tabManager]);
 
@@ -338,19 +378,15 @@ export default function TerminalsView() {
     setShowNewChatModal(false);
   }, [createAgent, tabManager]);
 
-  // Auto-start agents that have no PTY (freshly loaded from disk).
-  // Skip agents that already have a live PTY — they're idle but have an
-  // active Claude session waiting for the next prompt.
+  // 자동 시작 정책: 광범위 빈-프롬프트 auto-start 금지(작업 없이 신뢰 프롬프트만 띄움).
+  // PM 만 의미 있는 오케스트레이션 프롬프트를 launchd pmtick 가 매 10분 주입하므로,
+  // 다른 에이전트는 PM 의 delegate_task 가 실제 작업과 함께 깨운다.
+  // 여기서는 app 로드 시 어떤 에이전트도 자동 start 하지 않는다.
   const autoStartedRef = useRef(false);
   useEffect(() => {
     if (isLoading || autoStartedRef.current) return;
     autoStartedRef.current = true;
-    const needsStart = agents.filter(a =>
-      (a.status === 'idle' || a.status === 'completed') && !a.ptyId
-    );
-    for (const agent of needsStart) {
-      startAgent(agent.id, '', { resume: true }).catch(() => { });
-    }
+    // intentionally no-op — see comment above.
   }, [isLoading, agents, startAgent]);
 
   // Exit view fullscreen on Escape
@@ -427,6 +463,9 @@ export default function TerminalsView() {
             isLoading={isLoading}
             isEditable={isEditable}
             tabType={tabType}
+            availableAgents={agents}
+            currentTabAgentIds={agentIds}
+            onChangeAgent={handleChangeAgent}
             onRegisterContainer={multiTerminal.registerContainer}
             onStartAgent={handleStartAgent}
             onStopAgent={handleStopAgent}

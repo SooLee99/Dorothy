@@ -10,9 +10,9 @@ export function PageHeader({ isRefreshing, onRefresh, onCreateNew }: PageHeaderP
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
       <div>
-        <h1 className="text-xl lg:text-2xl font-bold tracking-tight">Scheduled Tasks</h1>
+        <h1 className="text-xl lg:text-2xl font-bold tracking-tight">예약 작업</h1>
         <p className="text-muted-foreground text-xs lg:text-sm mt-1 hidden sm:block">
-          Automate recurring tasks with your agents
+          에이전트로 반복 작업을 자동화
         </p>
       </div>
       <div className="flex items-center gap-2">

@@ -195,11 +195,11 @@ export default function SkillsPage() {
       <div className="flex flex-col gap-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-xl lg:text-2xl font-bold tracking-tight">Skills Marketplace</h1>
+            <h1 className="text-xl lg:text-2xl font-bold tracking-tight">스킬 마켓플레이스</h1>
             <p className="text-muted-foreground text-xs lg:text-sm mt-1 hidden sm:block">
               {hasElectron
-                ? 'Install skills directly to enhance your AI Agents'
-                : 'Browse and copy install commands for skills'
+                ? 'AI 에이전트를 강화할 스킬을 바로 설치'
+                : '스킬 설치 명령을 둘러보고 복사'
               }
             </p>
           </div>

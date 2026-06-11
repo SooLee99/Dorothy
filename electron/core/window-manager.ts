@@ -43,7 +43,8 @@ export function createWindow() {
   // Load the Next.js app
   const isDev = process.env.NODE_ENV === 'development';
   if (isDev) {
-    mainWindow.loadURL('http://localhost:3000');
+    const port = process.env.PORT || '3000';
+    mainWindow.loadURL(`http://localhost:${port}`);
     mainWindow.webContents.openDevTools();
   } else {
     // In production, use the custom app:// protocol to properly serve static files

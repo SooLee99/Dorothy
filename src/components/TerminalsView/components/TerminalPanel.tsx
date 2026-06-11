@@ -11,6 +11,9 @@ interface TerminalPanelProps {
   isBroadcasting: boolean;
   isFocused: boolean;
   tabType: 'custom' | 'project';
+  availableAgents?: AgentStatus[];
+  currentTabAgentIds?: string[];
+  onChangeAgent?: (oldAgentId: string, newAgentId: string) => void;
   onRegisterContainer: (agentId: string, container: HTMLDivElement | null) => void;
   onStart: (agentId: string) => void;
   onStop: (agentId: string) => void;
@@ -28,6 +31,9 @@ export default function TerminalPanel({
   isBroadcasting,
   isFocused,
   tabType,
+  availableAgents,
+  currentTabAgentIds,
+  onChangeAgent,
   onRegisterContainer,
   onStart,
   onStop,
@@ -61,6 +67,17 @@ export default function TerminalPanel({
     onFocus(agent.id);
   }, [agent.id, onFocus]);
 
+  // Agents selectable for this panel: this panel's own agent + any agent
+  // in scope not already occupying another panel of the same tab.
+  const inTab = currentTabAgentIds;
+  const agentOptions = (availableAgents || []).filter(
+    (a) => a.id === agent.id || !inTab || !inTab.includes(a.id),
+  );
+  const handleChangeAgent = useCallback(
+    (newAgentId: string) => onChangeAgent?.(agent.id, newAgentId),
+    [agent.id, onChangeAgent],
+  );
+
   const handleStart = useCallback(() => onStart(agent.id), [agent.id, onStart]);
   const handleStop = useCallback(() => onStop(agent.id), [agent.id, onStop]);
   const handleRemove = useCallback(() => onRemove(agent.id), [agent.id, onRemove]);
@@ -85,6 +102,8 @@ export default function TerminalPanel({
         isFullscreen={isFullscreen}
         isBroadcasting={isBroadcasting}
         tabType={tabType}
+        agentOptions={agentOptions}
+        onChangeAgent={onChangeAgent ? handleChangeAgent : undefined}
         onStart={handleStart}
         onStop={handleStop}
         onFullscreen={handleFullscreen}

@@ -121,7 +121,7 @@ function FolderNode({ folder, childFolders, allFolders, documents, selectedFolde
           onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
           className="shrink-0 hover:text-foreground p-0.5"
         >
-          {expanded && hasContent
+          {expanded
             ? <ChevronDown className="w-3 h-3" />
             : <ChevronRight className="w-3 h-3" />
           }
@@ -156,13 +156,22 @@ function FolderNode({ folder, childFolders, allFolders, documents, selectedFolde
       </div>
 
       <AnimatePresence>
-        {expanded && hasContent && (
+        {expanded && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.15 }}
           >
+            {/* 빈 폴더 안내 — 자식·문서·신규생성 모두 없을 때 */}
+            {!hasContent && (
+              <div
+                className="text-[11px] text-muted-foreground italic py-1"
+                style={{ paddingLeft: `${8 + (depth + 1) * 16}px` }}
+              >
+                (비어 있음)
+              </div>
+            )}
             {/* Child folders */}
             {childFolders.map(child => {
               const grandchildren = allFolders.filter(f => f.parent_id === child.id);

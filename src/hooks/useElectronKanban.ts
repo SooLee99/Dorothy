@@ -15,6 +15,19 @@ export function useElectronKanban() {
   // Fetch all tasks
   const fetchTasks = useCallback(async () => {
     if (!isElectron() || !window.electronAPI?.kanban) {
+      // Web fallback: read-only display of ~/.dorothy/kanban-tasks.json via API route.
+      try {
+        const res = await fetch('/api/dorothy/kanban');
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setTasks(data as KanbanTask[]);
+            setError(null);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch kanban from web fallback:', err);
+      }
       setIsLoading(false);
       return;
     }
@@ -39,7 +52,8 @@ export function useElectronKanban() {
   // Note: State is updated via onTaskCreated event to avoid duplicates
   const createTask = useCallback(async (params: KanbanTaskCreate) => {
     if (!isElectron() || !window.electronAPI?.kanban) {
-      throw new Error('Electron API not available');
+      // Web mode is read-only. Open the Dorothy Electron app to edit Kanban tasks.
+      throw new Error('이 작업은 Dorothy 데스크톱 앱(Electron)에서만 동작합니다. 카드 이동·생성·삭제는 Electron 창에서 진행해 주세요.');
     }
 
     const result = await window.electronAPI.kanban.create(params);
@@ -50,7 +64,8 @@ export function useElectronKanban() {
   // Note: State is updated via onTaskUpdated event
   const updateTask = useCallback(async (params: KanbanTaskUpdate) => {
     if (!isElectron() || !window.electronAPI?.kanban) {
-      throw new Error('Electron API not available');
+      // Web mode is read-only. Open the Dorothy Electron app to edit Kanban tasks.
+      throw new Error('이 작업은 Dorothy 데스크톱 앱(Electron)에서만 동작합니다. 카드 이동·생성·삭제는 Electron 창에서 진행해 주세요.');
     }
 
     const result = await window.electronAPI.kanban.update(params);
@@ -65,7 +80,8 @@ export function useElectronKanban() {
     order?: number
   ): Promise<KanbanMoveResult> => {
     if (!isElectron() || !window.electronAPI?.kanban) {
-      throw new Error('Electron API not available');
+      // Web mode is read-only. Open the Dorothy Electron app to edit Kanban tasks.
+      throw new Error('이 작업은 Dorothy 데스크톱 앱(Electron)에서만 동작합니다. 카드 이동·생성·삭제는 Electron 창에서 진행해 주세요.');
     }
 
     const result = await window.electronAPI.kanban.move({ id, column, order });
@@ -76,7 +92,8 @@ export function useElectronKanban() {
   // Note: State is updated via onTaskDeleted event
   const deleteTask = useCallback(async (id: string) => {
     if (!isElectron() || !window.electronAPI?.kanban) {
-      throw new Error('Electron API not available');
+      // Web mode is read-only. Open the Dorothy Electron app to edit Kanban tasks.
+      throw new Error('이 작업은 Dorothy 데스크톱 앱(Electron)에서만 동작합니다. 카드 이동·생성·삭제는 Electron 창에서 진행해 주세요.');
     }
 
     const result = await window.electronAPI.kanban.delete(id);
@@ -87,7 +104,8 @@ export function useElectronKanban() {
   // Note: State is updated via onTaskUpdated events
   const reorderTasks = useCallback(async (taskIds: string[], column: KanbanColumn) => {
     if (!isElectron() || !window.electronAPI?.kanban) {
-      throw new Error('Electron API not available');
+      // Web mode is read-only. Open the Dorothy Electron app to edit Kanban tasks.
+      throw new Error('이 작업은 Dorothy 데스크톱 앱(Electron)에서만 동작합니다. 카드 이동·생성·삭제는 Electron 창에서 진행해 주세요.');
     }
 
     const result = await window.electronAPI.kanban.reorder({ taskIds, column });

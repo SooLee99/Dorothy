@@ -542,9 +542,9 @@ export default function PluginsPage() {
       <div className="flex flex-col gap-3 shrink-0">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-xl lg:text-2xl font-bold tracking-tight">Plugin Marketplace</h1>
+            <h1 className="text-xl lg:text-2xl font-bold tracking-tight">플러그인 마켓플레이스</h1>
             <p className="text-muted-foreground text-xs lg:text-sm mt-1 hidden sm:block">
-              Extend Claude Code with plugins for code intelligence, integrations, and workflows
+              코드 인텔리전스·연동·워크플로우 플러그인으로 Claude Code를 확장
             </p>
           </div>
           <a

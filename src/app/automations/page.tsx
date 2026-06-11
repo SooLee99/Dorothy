@@ -386,9 +386,9 @@ export default function AutomationsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl lg:text-2xl font-bold tracking-tight">Automations</h1>
+          <h1 className="text-xl lg:text-2xl font-bold tracking-tight">자동화</h1>
           <p className="text-muted-foreground text-xs lg:text-sm mt-1 hidden sm:block">
-            Poll external sources and trigger Claude agents automatically
+            외부 소스를 폴링해 Claude 에이전트를 자동 실행
           </p>
         </div>
         <div className="flex items-center gap-2">

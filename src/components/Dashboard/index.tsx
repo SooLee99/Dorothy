@@ -22,6 +22,8 @@ import {
 import { useClaude } from '@/hooks/useClaude';
 import { useElectronAgents } from '@/hooks/useElectron';
 import StatsCard from './StatsCard';
+import ControlCenter from './ControlCenter';
+import AutonomyStatusPanel from './AutonomyStatusPanel';
 import dynamic from 'next/dynamic';
 
 // Dynamically import CanvasView to avoid SSR issues
@@ -246,12 +248,18 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-4 lg:space-y-6 pt-4 lg:pt-6">
+      {/* Phase 6-AL — 자동개발 관제 센터(홈 상단 요약) */}
+      <ControlCenter />
+
+      {/* Part H / E-2 — 자율운영 상태(liveness 4-state·pause·감독·예산·provider·에스컬레이션) */}
+      <AutonomyStatusPanel />
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl lg:text-2xl font-bold tracking-tight text-foreground">Dashboard</h1>
+          <h1 className="text-xl lg:text-2xl font-bold tracking-tight text-foreground">대시보드</h1>
           <p className="text-muted-foreground text-xs lg:text-sm mt-1 hidden sm:block">
-            Monitor your AI Agents in real-time
+            AI 에이전트를 실시간으로 모니터링
           </p>
         </div>
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
@@ -269,8 +277,8 @@ export default function Dashboard() {
               style={{ borderRadius: 7 }}
             >
               <TerminalSquare className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
-              <span className="hidden sm:inline">Terminals</span>
-              <span className="sm:hidden">Term</span>
+              <span className="hidden sm:inline">터미널</span>
+              <span className="sm:hidden">터미널</span>
             </button>
 
             <button
@@ -285,7 +293,7 @@ export default function Dashboard() {
               style={{ borderRadius: 7 }}
             >
               <LayoutGrid className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
-              Board
+              보드
             </button>
             <button
               onClick={() => setViewMode('world')}
@@ -299,7 +307,7 @@ export default function Dashboard() {
               style={{ borderRadius: 7 }}
             >
               <Globe className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
-              <span className="hidden sm:inline">3D View</span>
+              <span className="hidden sm:inline">3D 뷰</span>
               <span className="sm:hidden">3D</span>
             </button>
 
@@ -311,10 +319,10 @@ export default function Dashboard() {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
               </span>
-              <span>{activeSessions.length} active session{activeSessions.length !== 1 ? 's' : ''}</span>
+              <span>활성 세션 {activeSessions.length}개</span>
             </div>
             <div className="mt-0.5">
-              {new Date().toLocaleDateString('en-US', {
+              {new Date().toLocaleDateString('ko-KR', {
                 weekday: 'long',
                 year: 'numeric',
                 month: 'long',

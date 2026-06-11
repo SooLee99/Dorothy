@@ -24,6 +24,12 @@ export interface RouteRequest {
   pathname: string;
   url: URL;
   body: Record<string, unknown>;
+  /**
+   * Raw request bytes. Populated only for paths that opted in via
+   * `RAW_BODY_PATHS` in api-server.ts (GitHub webhook needs this for HMAC).
+   * Other routes leave it undefined to keep memory usage flat.
+   */
+  rawBody?: Buffer;
   raw: http.IncomingMessage;
   res: http.ServerResponse;
   params: Record<string, string>;

@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X, Download, ExternalLink, RotateCw, Loader2 } from 'lucide-react';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { usePathname } from 'next/navigation';
+import ScreenDescription from './ScreenDescription';
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
@@ -238,6 +239,7 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
         transition={{ duration: 0.2, ease: 'easeInOut' }}
         className="min-h-screen pt-16 lg:pt-0 p-4 lg:p-6 pb-6"
       >
+        <ScreenDescription />
         {children}
       </motion.main>
 

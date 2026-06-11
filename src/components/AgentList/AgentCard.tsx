@@ -18,9 +18,11 @@ interface AgentCardProps {
 }
 
 export function AgentCard({ agent, isSelected, onSelect, onEdit }: AgentCardProps) {
-  const statusConfig = STATUS_COLORS[agent.status];
+  // Phase 6-X — undefined-safe (slug/file-based agents may lack these fields).
+  const statusConfig = STATUS_COLORS[agent.status] ?? STATUS_COLORS.idle;
   const StatusIcon = statusConfig.icon;
-  const projectName = agent.projectPath.split('/').pop() || 'Unknown';
+  const skills = Array.isArray(agent.skills) ? agent.skills : [];
+  const projectName = (typeof agent.projectPath === 'string' ? agent.projectPath.split('/').filter(Boolean).pop() : '') || 'Unknown';
   const projectColor = getProjectColor(projectName);
   const isSuper = isSuperAgentCheck(agent);
 
@@ -139,9 +141,9 @@ export function AgentCard({ agent, isSelected, onSelect, onEdit }: AgentCardProp
               </span>
             )}
           </div>
-          {agent.skills.length > 0 && (
+          {skills.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-2">
-              {agent.skills.slice(0, 2).map((skill) => (
+              {skills.slice(0, 2).map((skill) => (
                 <span
                   key={skill}
                   className="px-1.5 py-0.5 rounded bg-accent-purple/20 text-accent-purple text-[10px] truncate max-w-[70px]"
@@ -150,9 +152,9 @@ export function AgentCard({ agent, isSelected, onSelect, onEdit }: AgentCardProp
                   {skill}
                 </span>
               ))}
-              {agent.skills.length > 2 && (
+              {skills.length > 2 && (
                 <span className="px-1.5 py-0.5 rounded bg-bg-tertiary text-text-muted text-[10px]">
-                  +{agent.skills.length - 2}
+                  +{skills.length - 2}
                 </span>
               )}
             </div>

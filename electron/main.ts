@@ -37,6 +37,7 @@ import {
   handleStatusChangeNotification,
   getSuperAgentOutputBuffer,
   clearSuperAgentOutputBuffer,
+  reloadAgentsFromDisk,
 } from './core/agent-manager';
 
 import {
@@ -54,7 +55,8 @@ import { extractStatusLine } from './utils/ansi';
 import { scheduleTick } from './utils/agents-tick';
 
 // Services
-import { startApiServer } from './services/api-server';
+import { startApiServer, getApiToken } from './services/api-server';
+import { API_PORT } from './constants';
 import {
   initTelegramBotService,
   initTelegramBot as initTelegramBotHandlers,
@@ -92,7 +94,18 @@ import { registerKanbanHandlers } from './handlers/kanban-handlers';
 import { registerVaultHandlers } from './handlers/vault-handlers';
 import { registerWorldHandlers } from './handlers/world-handlers';
 import { registerTemplateHandlers } from './handlers/template-handlers';
+import { registerDorothyHandlers } from './handlers/dorothy-handlers';
+import { startBusyLockMaintainer } from './core/busy-lock';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
+import { initDorothyDb, closeDorothyDb } from './services/dorothy/db';
+import { configureOrchestrator } from './services/dorothy/orchestrator-service';
+import {
+  configureAutoResume,
+  startAutoResumeTicker,
+  stopAutoResumeTicker,
+  normalizeAutoResumeMode,
+} from './services/dorothy/auto-resume-scheduler';
+import { registerDorothyRunsHandlers } from './handlers/dorothy-runs-handler';
 import { initAutoUpdater, checkForUpdates, setMainWindowGetter } from './services/update-checker';
 import { initKanbanAutomation, findMatchingAgent, createAgentForTask, startAgentForTask } from './services/kanban-automation';
 
@@ -362,6 +375,12 @@ app.whenReady().then(async () => {
   // Register agent template handlers (no deps — self-contained)
   registerTemplateHandlers();
 
+  // Register Dorothy company/auto-company/harness/approvals handlers (self-contained)
+  registerDorothyHandlers();
+
+  // Auto-Company 데몬과의 상호 배제용 busy-lock 유지 (에이전트 작업 중이면 데몬이 양보)
+  startBusyLockMaintainer();
+
   // Register kanban handlers
   registerKanbanHandlers({
     getMainWindow,
@@ -410,10 +429,125 @@ app.whenReady().then(async () => {
       const agent = agents.get(agentId);
       return agent?.output || [];
     },
+    // Phase 4.5 — Plan-aware ownerAgentId routing uses this snapshot.
+    getLiveAgents: () => Array.from(agents.values()).map(a => ({
+      id: a.id,
+      status: a.status,
+      name: a.name,
+      projectPath: a.projectPath,
+      skills: a.skills,
+    })),
   });
 
   // Initialize vault database
   initVaultDb();
+
+  // Initialize Dorothy MVP run-model database (separate file from vault.db).
+  // initDorothyDb returns a status object instead of throwing — on failure we
+  // log and keep going so the rest of Dorothy stays usable.
+  const dorothyDbResult = initDorothyDb();
+  if (!dorothyDbResult.ok) {
+    console.error('[main] Dorothy MVP DB unavailable:', dorothyDbResult.reason);
+  }
+
+  // Register the new Run/RunStep/AgentSession/Plan/Artifact/Handoff IPC.
+  // Handlers themselves degrade gracefully when the DB is null.
+  registerDorothyRunsHandlers({
+    // Phase 6-H — let the registry IPC reload agents.json into the live
+    // agent-manager map without restarting or killing active sessions.
+    reloadLiveAgents: (reason?: string) => reloadAgentsFromDisk({ reason, mergeMetadataForExisting: true }),
+    // Phase 6-I — live-loaded ids for isLiveLoaded / isSpawnable computation.
+    getLiveAgentIds: () => Array.from(agents.keys()),
+    // Phase 6-Q — warm-up support: live statuses + internal start adapter.
+    getLiveAgentStatuses: () => Array.from(agents.values()).map(a => ({ id: a.id, status: a.status })),
+    startAgentByApi: async ({ agentId, prompt }) => {
+      const res = await fetch(`http://127.0.0.1:${API_PORT}/api/agents/${agentId}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getApiToken()}` },
+        body: JSON.stringify({ prompt }),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => '<no body>');
+        throw new Error(`/api/agents/${agentId}/start returned ${res.status}: ${body.slice(0, 120)}`);
+      }
+    },
+  });
+
+  // MVP Phase 3/4.5 — give the orchestrator the live agent snapshot and a
+  // start adapter. The adapter is gated by `dorothyOrchestratorAutoSpawn`
+  // (default false): when the flag is off, the orchestrator only *picks*
+  // the next worker; the legacy kanban-handlers / `/api/agents/:id/start`
+  // path stays in charge of actually spawning. When the flag is on, the
+  // orchestrator calls the existing HTTP start endpoint directly so we
+  // reuse provider routing, MCP config wiring, and PTY plumbing without
+  // duplicating any of it.
+  configureOrchestrator({
+    getLiveAgents: () => Array.from(agents.values()).map(a => ({
+      id: a.id,
+      status: a.status,
+      // We don't store roleId on AgentStatus today; the heuristic uses
+      // `name` (which often contains the role) via selectAgentForOwnerRole's
+      // case-insensitive `includes` check.
+      name: a.name,
+      projectPath: a.projectPath,
+      skills: a.skills,
+    })),
+    startAgent: async ({ agentId, prompt, runId, runStepId }) => {
+      // Feature flag — default off. Tests / IPC mutations re-read this on
+      // every call, so flipping the setting in /settings takes effect at
+      // the next dispatch with no app restart.
+      if (!appSettings.dorothyOrchestratorAutoSpawn) {
+        throw new Error('orchestratorAutoSpawn disabled — leave step pending for legacy spawn');
+      }
+      const res = await fetch(`http://127.0.0.1:${API_PORT}/api/agents/${agentId}/start`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getApiToken()}`,
+        },
+        body: JSON.stringify({ prompt }),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => '<no body>');
+        throw new Error(`/api/agents/${agentId}/start returned ${res.status}: ${body.slice(0, 200)}`);
+      }
+      // The hooks-routes.ts AgentSession mirror will write a row when the
+      // existing `/api/hooks/status` event fires for this agent. We attach
+      // the session→step binding lazily on the orchestrator side so the
+      // moment a Stop hook arrives, `completeRunStep` looks up the right
+      // RunStep.
+      void runId; void runStepId;
+    },
+  });
+
+  // Phase 5C-B — Auto Resume Scheduler. Default mode is 'dry-run'; we tick
+  // every 60s so a resume target waiting on a 5-hour cooldown wakes within
+  // ~1 minute of the reset time. The scheduler reuses the same HTTP-based
+  // startAgent adapter as the orchestrator above.
+  configureAutoResume({
+    getMode: () => normalizeAutoResumeMode(appSettings.dorothyAutoResumeRateLimitedSessions),
+    getLiveAgents: () => Array.from(agents.values()).map(a => ({
+      id: a.id,
+      status: a.status,
+      name: a.name,
+    })),
+    startAgent: async ({ agentId, prompt, runId, runStepId }) => {
+      const res = await fetch(`http://127.0.0.1:${API_PORT}/api/agents/${agentId}/start`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getApiToken()}`,
+        },
+        body: JSON.stringify({ prompt }),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => '<no body>');
+        throw new Error(`/api/agents/${agentId}/start returned ${res.status}: ${body.slice(0, 200)}`);
+      }
+      void runId; void runStepId;
+    },
+  });
+  startAutoResumeTicker(60_000);
 
   // Register vault handlers
   registerVaultHandlers({ getMainWindow });
@@ -623,7 +757,9 @@ app.on('before-quit', () => {
   destroyTray();
   saveAgents();
   killAllPty();
+  stopAutoResumeTicker();
   closeVaultDb();
+  closeDorothyDb();
 });
 
 // Handle certificate errors in development

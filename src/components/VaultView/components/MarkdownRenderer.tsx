@@ -218,6 +218,50 @@ export function SimpleMarkdown({ content }: { content: string }) {
       }
     }
 
+    // GFM 표: 헤더행 + 구분행(|---|---|) + 본문행. (커스텀 렌더러라 표 미지원이던 문제 해결)
+    const isTableRow = (l: string) => l.includes('|') && l.trim().length > 0;
+    const isTableSep = (l: string) => /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(l) && l.includes('|') && l.includes('-');
+    if (isTableRow(line) && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+      const parseCells = (l: string) => {
+        let s = l.trim();
+        if (s.startsWith('|')) s = s.slice(1);
+        if (s.endsWith('|')) s = s.slice(0, -1);
+        return s.split('|').map(c => c.trim());
+      };
+      const header = parseCells(line);
+      const aligns = parseCells(lines[i + 1]).map(c => {
+        const L = c.startsWith(':'), R = c.endsWith(':');
+        return (L && R) ? 'center' : R ? 'right' : 'left';
+      }) as ('left' | 'right' | 'center')[];
+      const rows: string[][] = [];
+      let j = i + 2;
+      while (j < lines.length && isTableRow(lines[j]) && !isTableSep(lines[j])) { rows.push(parseCells(lines[j])); j++; }
+      elements.push(
+        <div key={i} className="my-2 overflow-x-auto">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr>
+                {header.map((h, hi) => (
+                  <th key={hi} className="border border-border px-2 py-1 bg-secondary/60 font-semibold" style={{ textAlign: aligns[hi] || 'left' }}>{renderInline(h)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, ri) => (
+                <tr key={ri}>
+                  {header.map((_, ci) => (
+                    <td key={ci} className="border border-border px-2 py-1 text-foreground" style={{ textAlign: aligns[ci] || 'left' }}>{renderInline(r[ci] || '')}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+      i = j - 1;
+      continue;
+    }
+
     // Blockquote
     if (line.startsWith('> ')) {
       elements.push(

@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { execSync } from 'child_process';
 import type { AppSettings } from '../types';
+import { resolveClaudeBinaryPath } from '../core/claude-binary-resolver';
 import type {
   CLIProvider,
   InteractiveCommandParams,
@@ -30,7 +31,16 @@ export class ClaudeProvider implements CLIProvider {
   }
 
   resolveBinaryPath(appSettings: AppSettings): string {
-    return appSettings.cliPaths?.claude || 'claude';
+    // Phase 6-K — prefer an explicitly configured path, then resolve an
+    // ABSOLUTE executable path so the launch command never depends on the
+    // launchd/Electron/PTY PATH (which often omits ~/.npm-global/bin and
+    // produces `bash: claude: command not found`).
+    const configured = appSettings.cliPaths?.claude || appSettings.claudeBinaryPath;
+    const resolved = resolveClaudeBinaryPath({ configuredPath: configured || undefined });
+    if (resolved.ok && resolved.path) return resolved.path;
+    // Last resort — bare name; the launch-readiness check surfaces the failure
+    // as claude_binary_missing instead of leaving an empty shell prompt.
+    return configured || 'claude';
   }
 
   buildInteractiveCommand(params: InteractiveCommandParams): string {
@@ -60,13 +70,9 @@ export class ClaudeProvider implements CLIProvider {
     }
 
     // Permission mode
-    if (params.permissionMode === 'normal') {
-      command += ' --permission-mode default';
-    } else if (params.permissionMode === 'auto') {
-      command += ' --permission-mode auto';
-    } else if (params.permissionMode === 'bypass') {
-      command += ' --dangerously-skip-permissions';
-    }
+    // 정책: 대시보드에서 실행되는 모든 claude 에이전트는 항상 --dangerously-skip-permissions 로 시작(완전 자율).
+    // permissionMode 입력 값은 무시한다.
+    command += ' --dangerously-skip-permissions';
 
     // Effort level
     if (params.effort && params.effort !== 'medium') {

@@ -1,6 +1,13 @@
 import { useMemo } from 'react';
 import type { AgentStatus } from '@/types/electron';
 import { isSuperAgentCheck, getStatusPriority } from '@/app/agents/constants';
+import {
+  projectKey,
+  projectLabel,
+  safeLower,
+  UNKNOWN_PROJECT_KEY,
+  UNKNOWN_PROJECT_LABEL,
+} from '@/lib/agentProjectPath';
 
 interface UseAgentFilteringProps {
   agents: AgentStatus[];
@@ -15,18 +22,21 @@ interface UniqueProject {
   name: string;
 }
 
+// Phase 6-V — undefined-safe field access via shared helpers (re-exported for
+// any consumer that needs the same normalization).
+export { UNKNOWN_PROJECT_KEY, UNKNOWN_PROJECT_LABEL };
+
 export function useAgentFiltering({ agents, projectFilter, statusFilter, searchQuery, sortBy = 'created' }: UseAgentFilteringProps) {
   const uniqueProjects = useMemo(() => {
     const projectSet = new Map<string, string>();
     agents.forEach((agent) => {
-      const projectName = agent.projectPath.split('/').pop() || 'Unknown';
-      projectSet.set(agent.projectPath, projectName);
+      projectSet.set(projectKey(agent.projectPath), projectLabel(agent.projectPath));
     });
     return Array.from(projectSet.entries()).map(([path, name]) => ({ path, name }));
   }, [agents]);
 
   const filteredAgents = useMemo(() => {
-    let filtered = projectFilter ? agents.filter(a => a.projectPath === projectFilter) : agents;
+    let filtered = projectFilter ? agents.filter(a => projectKey(a.projectPath) === projectFilter) : agents;
 
     if (statusFilter) {
       filtered = filtered.filter(a => a.status === statusFilter);
@@ -35,9 +45,9 @@ export function useAgentFiltering({ agents, projectFilter, statusFilter, searchQ
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       filtered = filtered.filter(a => {
-        const name = (a.name || '').toLowerCase();
-        const project = (a.projectPath.split('/').pop() || '').toLowerCase();
-        const task = (a.currentTask || '').toLowerCase();
+        const name = safeLower(a.name);
+        const project = safeLower(projectLabel(a.projectPath));
+        const task = safeLower(a.currentTask);
         return name.includes(q) || project.includes(q) || task.includes(q);
       });
     }

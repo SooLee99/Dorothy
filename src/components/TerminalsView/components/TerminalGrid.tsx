@@ -21,6 +21,9 @@ interface TerminalGridProps {
   isLoading: boolean;
   isEditable: boolean;
   tabType: 'custom' | 'project';
+  availableAgents?: AgentStatus[];
+  currentTabAgentIds?: string[];
+  onChangeAgent?: (oldAgentId: string, newAgentId: string) => void;
   onRegisterContainer: (agentId: string, container: HTMLDivElement | null) => void;
   onStartAgent: (agentId: string) => void;
   onStopAgent: (agentId: string) => void;
@@ -46,6 +49,9 @@ export default function TerminalGrid({
   isLoading,
   isEditable,
   tabType,
+  availableAgents,
+  currentTabAgentIds,
+  onChangeAgent,
   onRegisterContainer,
   onStartAgent,
   onStopAgent,
@@ -180,6 +186,9 @@ export default function TerminalGrid({
             isBroadcasting={broadcastMode}
             isFocused={true}
             tabType={tabType}
+            availableAgents={availableAgents}
+            currentTabAgentIds={currentTabAgentIds}
+            onChangeAgent={onChangeAgent}
             onRegisterContainer={onRegisterContainer}
             onStart={onStartAgent}
             onStop={onStopAgent}
@@ -221,6 +230,9 @@ export default function TerminalGrid({
                 isBroadcasting={broadcastMode}
                 isFocused={focusedPanelId === panel.agentId}
                 tabType={tabType}
+                availableAgents={availableAgents}
+                currentTabAgentIds={currentTabAgentIds}
+                onChangeAgent={onChangeAgent}
                 onRegisterContainer={onRegisterContainer}
                 onStart={onStartAgent}
                 onStop={onStopAgent}
