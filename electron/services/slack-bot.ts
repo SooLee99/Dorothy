@@ -583,6 +583,13 @@ export async function sendToSuperAgentFromSlack(
       // Build command with instructions file
       let command = 'claude';
 
+      // Slack 양방향 응답이 메인 Opus 풀을 소모해 "HTTP 429: usage limit reached"가
+      // 반복되던 문제(2026-06-12) 완화: Super Agent의 Slack 세션을 더 저렴한 Claude
+      // 모델로 라우팅한다. codex(잔액0)/gemini provider 분리는 spawn 경로 대수술이라
+      // 보류하고 Claude 모델로 변경(사용자 지시). ENV로 조정/되돌림 가능(빈 값이면 기본 모델).
+      const slackModel = process.env.DOROTHY_SLACK_SUPER_AGENT_MODEL ?? 'sonnet';
+      if (slackModel) command += ` --model '${slackModel.replace(/'/g, "'\\''")}'`;
+
       const mcpConfigPath = path.join(app.getPath('home'), '.claude', 'mcp.json');
       if (fs.existsSync(mcpConfigPath)) {
         command += ` --mcp-config '${mcpConfigPath}'`;
