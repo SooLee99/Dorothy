@@ -299,6 +299,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     recordStart(ptyId, agent.id, ptyProcess.pid); // PR-0a — 세션 계측 시작
 
     agent.ptyId = ptyId;
+    agent.pid = ptyProcess.pid; // 순서3 1-a — ★dispatch 워커(start) pid 영속. PR#4가 놓친 경로(429 원인). 리컨실러가 추적.
     agent.status = 'running';
     agent.currentTask = prompt;
     agent.output = [];
@@ -331,6 +332,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         if (exitCode !== 0) {
           agent.error = `Process exited with code ${exitCode}`;
         }
+        agent.pid = undefined; // 순서3 1-a — 종료 시 pid 비움(dead 잔존·오매칭 방지).
         agent.lastActivity = new Date().toISOString();
         ptyProcesses.delete(ptyId);
         saveAgents();
