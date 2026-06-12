@@ -540,6 +540,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
       ptyProcesses.set(newPtyId, newPty);
       recordStart(newPtyId, id, newPty.pid); // PR-0a — 세션 계측(local PTY 재생성)
       agent.ptyId = newPtyId;
+      agent.pid = newPty.pid; // 순서3 1-a — local provider PTY pid 영속(전수).
 
       // Re-attach event handlers
       newPty.onData((data) => {
@@ -575,6 +576,7 @@ function registerAgentHandlers(deps: IpcHandlerDependencies): void {
         if (agentData && agentData.ptyId === newPtyId) {
           const newStatus = exitCode === 0 ? 'completed' : 'error';
           agentData.status = newStatus;
+          agentData.pid = undefined; // 순서3 1-a — 종료 시 pid 비움.
           agentData.lastActivity = new Date().toISOString();
           handleStatusChangeNotification(agentData, newStatus);
         }
