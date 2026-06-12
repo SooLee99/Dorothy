@@ -214,6 +214,7 @@ export function loadAgents() {
 
       agent.status = 'idle';
       agent.ptyId = undefined;
+      agent.pid = undefined; // 순서3 — load/reset 시 stale pid 제거.
 
       // Phase 6-V — slug/file-based records have no `output`; initialize it so
       // saveAgents()/the /output endpoint never call .slice on undefined.
@@ -414,6 +415,7 @@ async function _doReloadAgentsFromDisk(options?: ReloadAgentsOptions): Promise<R
       agent.pathMissing = workingPath ? !fs.existsSync(workingPath) : true;
       agent.status = 'idle';
       agent.ptyId = undefined;
+      agent.pid = undefined; // 순서3 — load/reset 시 stale pid 제거.
       // Phase 6-V/6-X — ensure output + skills arrays exist (see loadAgents()).
       if (!Array.isArray(agent.output)) agent.output = [];
       if (!Array.isArray(agent.skills)) agent.skills = [];
@@ -562,6 +564,7 @@ export async function initAgentPty(
   const ptyId = uuidv4();
   ptyProcesses.set(ptyId, ptyProcess);
   recordStart(ptyId, agent.id, ptyProcess.pid); // PR-0a — 세션 계측 시작(O(1), out-of-band)
+  agent.pid = ptyProcess.pid; // 순서3 — pid를 레지스트리에 영속(agents.json) → 리컨실러가 프로세스↔에이전트 매핑.
 
   ptyProcess.onData((data) => {
     recordOutput(ptyId, data); // PR-0a — O(1) 계측(byteCount/lineCount/lastOutputAt)
@@ -596,6 +599,7 @@ export async function initAgentPty(
     if (agentData && agentData.ptyId === ptyId) {
       const newStatus = exitCode === 0 ? 'completed' : 'error';
       agentData.status = newStatus;
+      agentData.pid = undefined; // 순서3 — 종료 시 pid 비움(dead 잔존·오매칭 방지).
       agentData.lastActivity = new Date().toISOString();
       handleStatusChangeNotificationCallback(agentData, newStatus);
       saveAgentsCallback();

@@ -34,6 +34,9 @@ export interface AgentStatus {
   lastActivity: string;
   error?: string;
   ptyId?: string;
+  /** 순서3 — 살아있는 PTY 프로세스 pid(spawn 시 기록, 종료 시 비움). 리컨실러가
+   *  레지스트리↔실제 프로세스를 매핑해 '미추적 스폰'을 식별하게 한다("11 vs 20" 수리). */
+  pid?: number;
   character?: AgentCharacter;
   name?: string;
   pathMissing?: boolean;
