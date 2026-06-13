@@ -12,7 +12,7 @@ import {
   findActiveSessionForAgent,
   updateAgentSession,
 } from '../dorothy/agent-session-service';
-import { completeRunStep } from '../dorothy/orchestrator-service';
+import { completeRunStep, recordDispatchCommitRef } from '../dorothy/orchestrator-service';
 import { getDorothyDb } from '../dorothy/db';
 import { parseUsageLimitMessage } from '../dorothy/usage-limit-parser';
 import { recordRateLimitEventAndBlockRuns } from '../dorothy/rate-limit-bridge';
@@ -201,6 +201,13 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
         waitingReason: waiting_reason,
       });
       scheduleTick();
+
+      // ★#2 dispatch 경로 ref — worker dispatch(/start)는 RunStep 이 없어 completeRunStep(②ref)이
+      //   안 닿는다(실측: agent_sessions=0·바인딩 dead). 완료/idle 전이 시 commit-ref 를 직접 기록.
+      //   feat/* 만·중복 sha skip·비치명(helper 내부 가드). 기존 동작 불변.
+      if (agent.status === 'completed' || agent.status === 'idle') {
+        recordDispatchCommitRef(agent.id);
+      }
     }
 
     // MVP: mirror the same event into AgentSession (best-effort, isolated).
@@ -293,6 +300,11 @@ export function registerHooksRoutes(app: RouteApp, ctx: RouteContext): void {
       }
     } catch (err) {
       console.warn('[hooks] dorothy AgentSession mirror (task-completed) failed:', err);
+    }
+
+    // ★#2 dispatch 경로 ref — TaskCompleted 시점에도 commit-ref 직접 기록(완료 전이 시 1회).
+    if (oldStatus !== 'completed') {
+      recordDispatchCommitRef(agent.id);
     }
 
     sendJson({ success: true, agent: { id: agent.id, status: agent.status } });

@@ -27,8 +27,16 @@ import {
 } from './run-service';
 import { listPlansByRun } from './plan-service';
 import { findActiveSessionForAgent } from './agent-session-service';
-import { createHandoff, createArtifact } from './artifact-service';
+import { createHandoff, createArtifact, listArtifactsByRun } from './artifact-service';
+import { getDorothyDb } from './db';
 import { execSync } from 'child_process';
+
+/**
+ * dispatch 경로 commit-ref 를 담는 inert sentinel run 의 고정 id.
+ * artifacts.run_id 는 NOT NULL + FK(runs) ★강제 ON(db.ts) 이라 synthetic id 는 거부된다.
+ * 그래서 실제 runs 행 1개(state=completed → 오케스트레이터 루프가 안 집음)를 anchor 로 둔다.
+ */
+const DISPATCH_REFS_RUN_ID = 'dispatch-commit-refs';
 import {
   buildRunContextPrompt,
   resolveLiveAgentForStep,
@@ -474,6 +482,62 @@ export async function completeRunStep(params: {
   // If a worker is marked failed, Run goes to needs_fix only when we're past
   // the retry budget — advanceRun handles that branch.
   return advanceRun(updated.runId);
+}
+
+/**
+ * 자율 PR 토대 ②(dispatch 경로) — canary BUE-CANARY-1 가 잡은 #2 갭 해소.
+ *
+ * ②ref(commit-ref 기록)는 completeRunStep(Run 파이프라인)에만 있어, worker 가 실제 쓰는
+ * dispatch 경로(/start, RunStep 없음)에서는 발동하지 않는다(실측: run_steps.agent_session_id
+ * 비어있고 agent_sessions=0 → hooks 의 completeRunStep 바인딩 자체가 dead). 이 helper 를
+ * dispatch 완료 훅(hooks-routes status='completed'/'idle', task-completed)에서 직접 호출해
+ * worker repo 의 commit ref(SHA/branch)를 artifacts 에 기록한다.
+ *
+ * ★pid 패턴(PR#5: Run 파이프라인이 안 닿는 dispatch 경로에 직접 기록) 재사용 — Run/RunStep 안 만듦.
+ * ★기존 dispatch 동작 불변 — 기록만 추가, 실패는 전부 삼킨다(비치명).
+ * ★push 대상 per-task 브랜치(feat/*)만 — triplan 로컬커밋(feature/triplan-mvp) 노이즈 배제.
+ *   (자율 push 정책 = bueongi feat/<task-id> 한정. ④ 가 ref→CI 조회할 대상이 곧 feat push.)
+ * ★artifacts.run_id 는 NOT NULL 이라 dispatch 식별자 `dispatch:<agentId>` 를 synthetic run_id 로
+ *   anchor 로 둔다(FK 강제 ON 이라 synthetic id 는 거부됨 — db.ts:81). 같은 sha 중복 기록은
+ *   skip(완료·idle 훅 중복 방지).
+ */
+function ensureDispatchRefsRun(): boolean {
+  try {
+    const db = getDorothyDb();
+    if (!db) return false;
+    db.prepare(
+      `INSERT OR IGNORE INTO runs (id, title, source, priority, state, created_at)
+       VALUES (@id, @title, 'automation', 'low', 'completed', @now)`,
+    ).run({ id: DISPATCH_REFS_RUN_ID, title: 'Dispatch commit-ref ledger (자율 push 토대 #2)', now: new Date().toISOString() });
+    return true;
+  } catch { return false; }
+}
+
+export function recordDispatchCommitRef(agentId: string): void {
+  try {
+    const projectPath = depsRef?.getLiveAgents?.()?.find(a => a.id === agentId)?.projectPath;
+    if (!projectPath) return;
+    const opts = { cwd: projectPath, encoding: 'utf8' as const, timeout: 4000 };
+    const branch = execSync('git rev-parse --abbrev-ref HEAD', opts).trim();
+    // 자율 push 정책 대상(per-task feat/*)만 기록. 그 외(main·feature/triplan-mvp 등)는 skip.
+    if (!/^feat\//.test(branch)) return;
+    const commitSha = execSync('git rev-parse HEAD', opts).trim();
+    if (!ensureDispatchRefsRun()) return;
+    // 완료/idle 훅이 한 세션에 여러 번 발동할 수 있어, 같은 (agent, sha) 가 이미 기록됐으면 skip.
+    const dup = listArtifactsByRun(DISPATCH_REFS_RUN_ID).some(a => {
+      const m = a.meta as Record<string, unknown> | undefined;
+      return m?.commitSha === commitSha && a.producedByAgentId === agentId;
+    });
+    if (dup) return;
+    createArtifact({
+      runId: DISPATCH_REFS_RUN_ID,
+      runStepId: null,
+      type: 'other',
+      producedByAgentId: agentId,
+      meta: { kind: 'commit-ref', commitSha, branch, projectPath, dispatch: true, capturedAt: new Date().toISOString() },
+    });
+    console.log(`[orchestrator] dispatch commit-ref 기록: ${agentId} ${branch}@${commitSha.slice(0, 8)}`);
+  } catch { /* ref 기록 실패는 비치명 — dispatch/완료 흐름 안 막음 */ }
 }
 
 /* ============================================================================
