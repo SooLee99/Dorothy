@@ -27,7 +27,8 @@ import {
 } from './run-service';
 import { listPlansByRun } from './plan-service';
 import { findActiveSessionForAgent } from './agent-session-service';
-import { createHandoff } from './artifact-service';
+import { createHandoff, createArtifact } from './artifact-service';
+import { execSync } from 'child_process';
 import {
   buildRunContextPrompt,
   resolveLiveAgentForStep,
@@ -432,6 +433,28 @@ export async function completeRunStep(params: {
   const stepState = endStatus === 'completed' ? 'completed' : endStatus === 'cancelled' ? 'cancelled' : 'failed';
   const updated = updateRunStepState(runStepId, stepState, { errorReason });
   if (!updated) return null;
+
+  // 자율 PR 토대 ② — RunStep 완료 시 worker repo의 commit ref(SHA/branch)를 artifacts.meta_json 에
+  // 기록한다. dispatchVerifier(④)가 "이 작업의 commit/CI"를 ★쿼리할 수 있게(현재는 completionSummary
+  // 자유텍스트에만 있어 매핑 불가). ★push 와 무관 — 로컬 HEAD SHA 기록만. 기존 동작 불변(try/catch).
+  if (stepState === 'completed') {
+    try {
+      const liveAgents = depsRef?.getLiveAgents?.() ?? [];
+      const projectPath = liveAgents.find(a => a.id === updated.agentId)?.projectPath;
+      if (projectPath) {
+        const opts = { cwd: projectPath, encoding: 'utf8' as const, timeout: 4000 };
+        const commitSha = execSync('git rev-parse HEAD', opts).trim();
+        const branch = execSync('git rev-parse --abbrev-ref HEAD', opts).trim();
+        createArtifact({
+          runId: updated.runId,
+          runStepId: updated.id,
+          type: 'other',
+          producedByAgentId: updated.agentId,
+          meta: { kind: 'commit-ref', commitSha, branch, projectPath, capturedAt: new Date().toISOString() },
+        });
+      }
+    } catch { /* ref 기록 실패는 비치명 — 완료 흐름 안 막음 */ }
+  }
 
   // Write a handoff record linking this step to the previous one so the
   // Run Detail timeline / Handoffs tab has structure.
