@@ -34,6 +34,7 @@ import {
   Layers,
   Factory,
   Plug,
+  FlaskConical,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
@@ -76,6 +77,7 @@ const navItems: NavEntry[] = [
 
   { section: '고급 / 진단' },
   { href: '/runs', icon: PlayCircle, label: '실행 기록' },
+  { href: '/test-results', icon: FlaskConical, label: 'E2E 테스트' },
   { href: '/diagnostics', icon: Stethoscope, label: '진단' },
   { href: '/improvements', icon: Lightbulb, label: '개선' },
   { href: '/skill-candidates', icon: Layers, label: '스킬 후보' },
