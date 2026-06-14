@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { FreshnessBadge } from '@/components/Freshness';
 
 /**
  * 자동 가동 "볼 눈" — 통제 상태 패널(used%·worker·④ enforce·breaker). ★read-only(표시만).
@@ -34,22 +35,26 @@ function effColor(eff: number | null) {
 export default function SystemStatusPanel() {
   const [s, setS] = useState<SystemStatus | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [lastOk, setLastOk] = useState<number | null>(null); // fireauto ①: 마지막 성공 수신 시각(클라이언트)
 
+  const POLL_MS = 15000;
   useEffect(() => {
     let alive = true;
     const load = async () => {
       try {
         const r = await fetch('/api/dorothy/system-status', { cache: 'no-store' });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const j = await r.json();
-        if (alive) { setS(j); setErr(null); }
+        if (alive) { setS(j); setErr(null); setLastOk(Date.now()); }
       } catch (e) { if (alive) setErr(String(e)); }
     };
     load();
-    const t = setInterval(load, 15000); // 15s 폴링(읽기만)
+    const t = setInterval(load, POLL_MS); // 15s 폴링(읽기만)
     return () => { alive = false; clearInterval(t); };
   }, []);
 
-  if (err) return <div style={{ ...box, color: '#ff5c5c' }}>system-status 로드 실패: {err}</div>;
+  // ★fireauto ①: err 라도 직전 데이터(s)가 있으면 패널 유지 + 배지가 down/stale 로 드러냄(죽은 데이터 숨김 X).
+  if (err && !s) return <div style={{ ...box, color: '#ff5c5c' }}>system-status 로드 실패: {err}</div>;
   if (!s) return <div style={{ ...box, color: '#8a8a9a' }}>통제 상태 로딩…</div>;
 
   const u = s.usage, w = s.workers, b = s.breaker;
@@ -59,7 +64,8 @@ export default function SystemStatusPanel() {
     <section style={{ margin: '12px 0', padding: 14, border: '1px solid #2a2a3a', borderRadius: 10, background: '#0f0f17' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
         <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: '#e6e6f0' }}>🛰 통제 상태 (자동 가동 볼 눈)</h2>
-        <span style={{ fontSize: 10, color: '#6a6a7a' }}>read-only · 15s 갱신 · {new Date(s.generatedAt).toLocaleTimeString()}</span>
+        <FreshnessBadge lastSuccessAt={lastOk} pollMs={POLL_MS} ok={!err} label="데이터" />
+        <span style={{ fontSize: 10, color: '#6a6a7a' }}>read-only · 15s 폴링</span>
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>

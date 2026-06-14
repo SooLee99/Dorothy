@@ -17,6 +17,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import { FreshnessBadge } from '@/components/Freshness';
 import {
   CheckCircle2,
   XCircle,
@@ -112,6 +113,7 @@ export default function TestResultsDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [zoom, setZoom] = useState<string | null>(null); // local-file:// path of enlarged capture
+  const [lastOk, setLastOk] = useState<number | null>(null); // fireauto ①: 마지막 성공 수신(클라이언트)
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -120,6 +122,7 @@ export default function TestResultsDashboard() {
       const res = await fetch('/api/dorothy/test-results', { cache: 'no-store' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setData(await res.json());
+      setLastOk(Date.now());
     } catch (e) {
       setError(e instanceof Error ? e.message : 'load failed');
     } finally {
@@ -142,12 +145,16 @@ export default function TestResultsDashboard() {
         <h1 className="text-xl font-bold flex items-center gap-2">
           <CheckCircle2 className="w-5 h-5 text-emerald-400" /> E2E 테스트 결과
         </h1>
-        <button
-          onClick={() => void load()}
-          className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-border hover:bg-muted transition-colors"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> 새로고침
-        </button>
+        <div className="flex items-center gap-3">
+          {/* fireauto ①: 클라이언트측 신선도(스냅샷 age·stale 드러냄) — 서버 generatedAt와 별개로 살아있는지 표시 */}
+          <FreshnessBadge lastSuccessAt={lastOk} pollMs={30000} ok={!error} label="수신" />
+          <button
+            onClick={() => void load()}
+            className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-border hover:bg-muted transition-colors"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> 새로고침
+          </button>
+        </div>
       </div>
       <p className="text-xs text-muted-foreground mb-6">
         {data ? (
