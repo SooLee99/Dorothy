@@ -81,6 +81,16 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
   const [downloadSpeed, setDownloadSpeed] = useState(0);
   const downloadClickedRef = useRef(false);
 
+  // 3번 — UI heartbeat("보는 눈" 신호). 대시보드 화면이 열려있는 동안 주기 ping → 서버가 ui-heartbeat mtime 갱신.
+  //   닫히면 ping 멈춰 stale → pm-tick이 새 디스패치 SKIP(안 보는데 자동 가동 폭주=일주일 위기 차단).
+  //   ★감지만 — 대시보드 자동 launch 코드 없음(사람이 직접 열어야).
+  useEffect(() => {
+    const ping = () => { fetch('/api/dorothy/ui-heartbeat', { cache: 'no-store' }).catch(() => {}); };
+    ping();
+    const t = setInterval(ping, 15000);
+    return () => clearInterval(t);
+  }, []);
+
   // Listen for auto-check update available event from main process
   useEffect(() => {
     if (typeof window === 'undefined' || !window.electronAPI?.updates) return;
