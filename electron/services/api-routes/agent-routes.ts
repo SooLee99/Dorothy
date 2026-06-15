@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as pty from 'node-pty';
 import { app } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
@@ -15,6 +16,7 @@ import {
 } from '../../core/terminal-output-mask';
 import { buildFullPath } from '../../utils/path-builder';
 import { recordStart, recordOutput, recordExit } from '../../core/observability/session-metrics';
+import { createAgentSession } from '../dorothy/agent-session-service'; // 순서4② 심장수술 다리
 import { AgentStatus, AgentCharacter } from '../../types';
 import { RouteApp, RouteContext } from './types';
 
@@ -300,6 +302,18 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
 
     agent.ptyId = ptyId;
     agent.pid = ptyProcess.pid; // 순서3 1-a — ★dispatch 워커(start) pid 영속. PR#4가 놓친 경로(429 원인). 리컨실러가 추적.
+    // 순서4② 심장수술 canary — AgentSession 다리(죽은 createAgentSession 잇기). recon: 양 경로(Run dispatch·worker-nudge)가
+    //   여기 /start 단일 chokepoint 수렴 → 한 곳 삽입으로 둘 다 커버. ★flag 파일(없으면 off=현 상태)·scope 1-agent·try/catch.
+    //   세션 생성=① 부활(dispatch가 findActiveSessionForAgent→attachSessionToStep 바인딩). 실패해도 spawn/디스패치 안 막음.
+    try {
+      const bridgeFlag = path.join(os.homedir(), '.dorothy', 'runtime', 'agentsession-bridge.flag');
+      if (fs.existsSync(bridgeFlag)) {
+        const scope = fs.readFileSync(bridgeFlag, 'utf8').trim() || 'bueongi-dev';
+        if (scope === '*' || scope.split(',').map(s => s.trim()).includes(agent.id)) {
+          createAgentSession({ agentId: agent.id, provider: agent.provider || 'claude', pid: ptyProcess.pid });
+        }
+      }
+    } catch { /* best-effort — 세션 생성 실패는 spawn/디스패치 안 막음(전체 정지 방지) */ }
     agent.status = 'running';
     agent.currentTask = prompt;
     agent.output = [];
