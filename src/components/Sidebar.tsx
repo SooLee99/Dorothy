@@ -61,17 +61,20 @@ const navItems: NavEntry[] = [
   { href: '/sessions', icon: TerminalSquare, label: '에이전트 터미널' },
   { href: '/app-factory', icon: Factory, label: '앱 팩토리' },
 
-  { section: '운영' },
+  // #3 메뉴 재분리: 과적된 '운영'(12)을 '작업·협업'+'연동·자동화'로 분할(경로 삭제 0·라벨/그룹만).
+  { section: '작업·협업' },
   { href: '/agents', icon: Bot, label: '에이전트', shortcut: '2' },
+  { href: '/agent-activity', icon: Users, label: '에이전트 작업' },
+  { href: '/agent-workflows', icon: Workflow, label: '에이전트 워크플로우' },
   { href: '/reports', icon: FileText, label: '리포트' },
   { href: '/pr', icon: GitPullRequest, label: '풀 리퀘스트' },
   { href: '/approvals', icon: ShieldCheck, label: '승인 대기' },
-  { href: '/auto-company', icon: Workflow, label: '오토컴퍼니' },
+  { href: '/companies', icon: Building2, label: '회사' },
+
+  { section: '연동·자동화' },
   { href: '/automations', icon: Zap, label: '자동화', shortcut: '9' },
   { href: '/recurring-tasks', icon: CalendarClock, label: '스케줄', shortcut: '8' },
-  { href: '/agent-activity', icon: Users, label: '에이전트 작업' },
-  { href: '/agent-workflows', icon: Workflow, label: '에이전트 워크플로우' },
-  { href: '/companies', icon: Building2, label: '회사' },
+  { href: '/auto-company', icon: Workflow, label: '오토컴퍼니' },
   { href: '/templates', icon: Sparkles, label: '템플릿', shortcut: 'T' },
   { href: '/integrations/github', icon: Plug, label: '연동 설정' },
 
