@@ -317,6 +317,9 @@ function initApiServer() {
 // Register protocol schemes before app is ready
 registerProtocolSchemes();
 
+// 3번 정밀화 — UI heartbeat(앱 본체 기반) 타이머. 최소화 유지·완전 닫힘만 정지.
+let uiHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
 app.whenReady().then(async () => {
   console.log('App ready, initializing...');
 
@@ -353,6 +356,20 @@ app.whenReady().then(async () => {
 
   // Set the main window reference in utils
   setUtilsMainWindow(getMainWindow());
+
+  // 3번 정밀화 — UI heartbeat: 창이 하나라도 있으면(최소화 포함) ui-heartbeat 갱신 → pm-tick이 "보는 눈" 판정.
+  //   ★최소화/가림 = 창이 getAllWindows에 여전히 카운트 → 갱신 계속 → 자동 가동 유지.
+  //   ★완전 닫힘 = getAllWindows 0 → 갱신 중단 → grace 90s 후 stale → pm-tick SKIP.
+  //   ★자동 launch 0 — getAllWindows 읽기만(창 안 띄움). 강제종료/크래시는 :31415 체크 + stale 이중 방어.
+  const uiHeartbeatPath = path.join(os.homedir(), '.dorothy', 'runtime', 'ui-heartbeat');
+  uiHeartbeatTimer = setInterval(() => {
+    try {
+      if (BrowserWindow.getAllWindows().length > 0) {
+        fs.mkdirSync(path.dirname(uiHeartbeatPath), { recursive: true });
+        fs.writeFileSync(uiHeartbeatPath, new Date().toISOString());
+      }
+    } catch { /* best-effort — heartbeat 실패는 앱 동작 안 막음 */ }
+  }, 15000);
 
   // Initialize macOS menu bar tray with custom popup panel
   initTray();
@@ -754,6 +771,7 @@ app.on('activate', () => {
 // Save agents and kill all PTY processes before quitting
 app.on('before-quit', () => {
   console.log('App quitting, saving agents and killing all PTY processes...');
+  if (uiHeartbeatTimer) { clearInterval(uiHeartbeatTimer); uiHeartbeatTimer = null; } // 3번 정밀화 — heartbeat 정리
   destroyTray();
   saveAgents();
   killAllPty();
