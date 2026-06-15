@@ -34,6 +34,7 @@ import { useElectronAgents, useElectronFS, useElectronSkills, isElectron } from 
 import type { ClaudeProject } from '@/lib/claude-code';
 import type { AgentStatus, AgentCharacter } from '@/types/electron';
 import NewChatModal from '@/components/NewChatModal';
+import { FreshnessBadge } from '@/components/Freshness'; // 갭2: 신선도 배지
 
 // Generate consistent colors for projects based on name
 const getProjectColor = (name: string) => {
@@ -88,7 +89,7 @@ const stripAnsi = (str: string): string => {
 };
 
 export default function ProjectsPage() {
-  const { data, loading, error } = useClaude();
+  const { data, loading, error, lastFetch } = useClaude();
   const { agents, createAgent, startAgent, isElectron: hasElectron } = useElectronAgents();
   const { projects: electronProjects, openFolderDialog } = useElectronFS();
   const { installedSkills, refresh: refreshSkills } = useElectronSkills();
@@ -561,7 +562,7 @@ export default function ProjectsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl lg:text-2xl font-bold tracking-tight">프로젝트</h1>
+          <h1 className="text-xl lg:text-2xl font-bold tracking-tight">프로젝트 <span className="align-middle"><FreshnessBadge lastSuccessAt={lastFetch} pollMs={10000} ok={!error} label="수신" /></span></h1>
           <p className="text-muted-foreground text-xs lg:text-sm mt-1 hidden sm:block">
             프로젝트 {allProjects.length}개
           </p>

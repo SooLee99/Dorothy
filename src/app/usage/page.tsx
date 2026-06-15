@@ -22,6 +22,7 @@ import {
   FolderOpen,
 } from 'lucide-react';
 import { useClaude } from '@/hooks/useClaude';
+import { FreshnessBadge } from '@/components/Freshness'; // 갭2 canary: 신선도 배지
 
 // Token pricing per million tokens (MTok)
 const MODEL_PRICING: Record<string, {
@@ -157,7 +158,7 @@ function getModelDisplayName(modelId: string): string {
 type TimeRange = 'daily' | 'weekly' | 'monthly';
 
 export default function UsagePage() {
-  const { data, loading, error } = useClaude();
+  const { data, loading, error, lastFetch } = useClaude();
   const [costTimeRange, setCostTimeRange] = useState<TimeRange>('daily');
   const [showPricingTable, setShowPricingTable] = useState(false);
 
@@ -485,6 +486,8 @@ export default function UsagePage() {
           <div className="text-sm font-medium mb-4 flex items-center gap-2">
             <Gauge className="w-4 h-4 text-text-muted" />
             Subscription Quota
+            {/* 갭2 canary: 데이터 신선도(useClaude 10s 폴링 기준) — 죽은 데이터 오판 방지 */}
+            <span className="ml-auto"><FreshnessBadge lastSuccessAt={lastFetch} pollMs={10000} ok={!error} label="수신" /></span>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* 5-Hour Quota */}

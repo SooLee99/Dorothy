@@ -44,6 +44,7 @@ export function useClaude() {
   const [data, setData] = useState<ClaudeData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastFetch, setLastFetch] = useState<number | null>(null); // 갭2: 마지막 성공 수신 시각(신선도 배지용·additive)
 
   const fetchData = useCallback(async () => {
     try {
@@ -108,6 +109,7 @@ export function useClaude() {
             return prev;
           });
           setError(null);
+          setLastFetch(Date.now());
         } else {
           throw new Error('Failed to get Claude data from Electron');
         }
@@ -123,6 +125,7 @@ export function useClaude() {
           return prev;
         });
         setError(null);
+        setLastFetch(Date.now());
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -138,7 +141,7 @@ export function useClaude() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  return { data, loading, error, refresh: fetchData };
+  return { data, loading, error, refresh: fetchData, lastFetch };
 }
 
 export function useProjects() {
