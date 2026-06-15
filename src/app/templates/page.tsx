@@ -43,7 +43,7 @@ export default function TemplatesPage() {
   function handleInstallSkill(skillName: string) {
     const repo = findSkillRepo(skillName);
     if (!repo) {
-      setInstallError(`"${skillName}" isn't in the public marketplace. Install it manually from the Skills page.`);
+      setInstallError(`"${skillName}" 스킬은 공개 마켓플레이스에 없습니다. 스킬 페이지에서 직접 설치하세요.`);
       return;
     }
     setInstallSkillTarget({ repo: `${repo}/${skillName}`, title: skillName });
@@ -63,18 +63,18 @@ export default function TemplatesPage() {
   }
 
   async function handleUpdate(input: AgentTemplateInput) {
-    if (!editTarget) return { success: false, error: 'No template selected' };
+    if (!editTarget) return { success: false, error: '선택된 템플릿이 없습니다' };
     const result = await update({ id: editTarget.id, ...input });
     return { success: result.success, error: result.error };
   }
 
   async function handleDelete(template: AgentTemplate) {
-    if (!confirm(`Delete template "${template.displayName}"? This cannot be undone.`)) return;
+    if (!confirm(`템플릿 "${template.displayName}"을(를) 삭제할까요? 되돌릴 수 없습니다.`)) return;
     await remove(template.id);
   }
 
   async function handleReset(template: AgentTemplate) {
-    if (!confirm(`Reset "${template.displayName}" to its default settings?`)) return;
+    if (!confirm(`"${template.displayName}"을(를) 기본 설정으로 초기화할까요?`)) return;
     await remove(template.id);
   }
 
@@ -103,10 +103,10 @@ export default function TemplatesPage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <Sparkles className="w-6 h-6 text-primary" />
-            Agent Templates
+            에이전트 템플릿
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Pick a role, point it at a project, get an agent. No setup required.
+            역할을 고르고 프로젝트를 지정하면 에이전트가 만들어집니다. 별도 설정이 필요 없습니다.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -115,14 +115,14 @@ export default function TemplatesPage() {
             className="flex items-center gap-1.5 px-3 py-2 border border-border bg-card text-xs font-medium text-foreground hover:bg-accent/50 transition-colors"
           >
             <Upload className="w-4 h-4" />
-            Import
+            가져오기
           </button>
           <button
             onClick={() => setShowCreate(true)}
             className="flex items-center gap-1.5 px-3 py-2 bg-foreground text-background text-xs font-medium hover:bg-foreground/90 transition-colors"
           >
             <Plus className="w-4 h-4" />
-            New blank template
+            빈 템플릿 새로 만들기
           </button>
         </div>
       </div>
@@ -130,13 +130,13 @@ export default function TemplatesPage() {
       {isLoading ? (
         <div className="flex items-center justify-center py-20 text-muted-foreground">
           <Loader2 className="w-5 h-5 animate-spin mr-2" />
-          Loading templates…
+          템플릿 불러오는 중…
         </div>
       ) : (
         <>
           <section className="mb-8">
             <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider mb-3">
-              Built-in roles
+              기본 제공 역할
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {builtinTemplates.map(t => (
@@ -157,15 +157,15 @@ export default function TemplatesPage() {
 
           <section>
             <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider mb-3">
-              Your templates
+              내 템플릿
             </h2>
             {userTemplates.length === 0 ? (
               <div className="border border-dashed border-border bg-secondary/20 p-8 text-center">
                 <p className="text-sm text-muted-foreground mb-3">
-                  You haven&apos;t saved any templates yet.
+                  아직 저장한 템플릿이 없습니다.
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Duplicate a built-in role to customize it, or create a blank template.
+                  기본 제공 역할을 복제해 맞춤 설정하거나, 빈 템플릿을 새로 만들어 보세요.
                 </p>
               </div>
             ) : (
@@ -240,13 +240,13 @@ export default function TemplatesPage() {
               onClick={() => setInstallError(null)}
               className="text-xs text-muted-foreground hover:text-foreground px-2 py-1"
             >
-              Dismiss
+              닫기
             </button>
             <button
               onClick={() => { setInstallError(null); router.push('/skills'); }}
               className="text-xs bg-foreground text-background font-medium px-2 py-1 hover:bg-foreground/90"
             >
-              Open Skills page
+              스킬 페이지 열기
             </button>
           </div>
         </div>

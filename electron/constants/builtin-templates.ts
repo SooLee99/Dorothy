@@ -14,8 +14,8 @@ function builtin(t: Omit<AgentTemplate, 'builtin' | 'createdAt' | 'updatedAt'>):
 export const BUILTIN_TEMPLATES: AgentTemplate[] = [
   builtin({
     id: 'builtin:fe-engineer',
-    displayName: 'Frontend Engineer',
-    description: 'Builds and polishes user interfaces. Knows React, design systems, and accessibility.',
+    displayName: '프론트엔드 엔지니어',
+    description: '사용자 인터페이스를 만들고 다듬습니다. React, 디자인 시스템, 접근성에 능숙합니다.',
     icon: '🎨',
     tags: ['frontend', 'engineer'],
     character: 'ninja',
@@ -39,8 +39,8 @@ export const BUILTIN_TEMPLATES: AgentTemplate[] = [
   }),
   builtin({
     id: 'builtin:be-engineer',
-    displayName: 'Backend Engineer',
-    description: 'Designs APIs, data models, and server logic. Cares about reliability and edge cases.',
+    displayName: '백엔드 엔지니어',
+    description: 'API, 데이터 모델, 서버 로직을 설계합니다. 안정성과 예외 상황을 꼼꼼히 챙깁니다.',
     icon: '⚙️',
     tags: ['backend', 'engineer'],
     character: 'wizard',
@@ -64,8 +64,8 @@ export const BUILTIN_TEMPLATES: AgentTemplate[] = [
   }),
   builtin({
     id: 'builtin:security-engineer',
-    displayName: 'Security Engineer',
-    description: 'Reviews code for vulnerabilities, secrets leaks, and unsafe patterns. Read-only by default.',
+    displayName: '보안 엔지니어',
+    description: '취약점, 시크릿 유출, 위험한 패턴을 코드에서 검토합니다. 기본적으로 읽기 전용입니다.',
     icon: '🛡️',
     tags: ['security', 'review'],
     character: 'knight',
@@ -84,8 +84,8 @@ export const BUILTIN_TEMPLATES: AgentTemplate[] = [
   }),
   builtin({
     id: 'builtin:code-reviewer',
-    displayName: 'Code Reviewer',
-    description: 'Reviews changes for correctness, style, hidden bugs, and silent failures.',
+    displayName: '코드 리뷰어',
+    description: '변경 사항을 정확성, 스타일, 숨은 버그, 조용한 실패 관점에서 검토합니다.',
     icon: '👁️',
     tags: ['review', 'quality'],
     character: 'alien',
@@ -105,8 +105,8 @@ export const BUILTIN_TEMPLATES: AgentTemplate[] = [
   }),
   builtin({
     id: 'builtin:tester',
-    displayName: 'Tester (QA)',
-    description: 'Writes and runs tests. Hunts edge cases, regressions, and missing coverage.',
+    displayName: '테스터 (QA)',
+    description: '테스트를 작성하고 실행합니다. 예외 상황, 회귀, 누락된 커버리지를 찾아냅니다.',
     icon: '🧪',
     tags: ['testing', 'quality'],
     character: 'astronaut',
@@ -126,8 +126,8 @@ export const BUILTIN_TEMPLATES: AgentTemplate[] = [
   }),
   builtin({
     id: 'builtin:refactor',
-    displayName: 'Refactor Specialist',
-    description: 'Simplifies messy code without changing behavior. Splits big files, removes dead code.',
+    displayName: '리팩터링 전문가',
+    description: '동작은 그대로 두고 지저분한 코드를 단순화합니다. 큰 파일을 나누고 죽은 코드를 제거합니다.',
     icon: '🧹',
     tags: ['refactor', 'quality'],
     character: 'robot',
@@ -147,8 +147,8 @@ export const BUILTIN_TEMPLATES: AgentTemplate[] = [
   }),
   builtin({
     id: 'builtin:docs-writer',
-    displayName: 'Docs Writer',
-    description: 'Writes READMEs, changelogs, and inline docs in plain language.',
+    displayName: '문서 작성자',
+    description: 'README, 변경 로그, 인라인 문서를 쉬운 말로 작성합니다.',
     icon: '📝',
     tags: ['docs', 'writing'],
     character: 'pirate',
@@ -168,8 +168,8 @@ export const BUILTIN_TEMPLATES: AgentTemplate[] = [
   }),
   builtin({
     id: 'builtin:devops',
-    displayName: 'DevOps Engineer',
-    description: 'Sets up CI, deploy pipelines, and infra glue. Treats production as fragile.',
+    displayName: 'DevOps 엔지니어',
+    description: 'CI, 배포 파이프라인, 인프라 연결을 구성합니다. 프로덕션을 깨지기 쉬운 것으로 다룹니다.',
     icon: '🚀',
     tags: ['devops', 'infra'],
     character: 'viking',
@@ -189,8 +189,8 @@ export const BUILTIN_TEMPLATES: AgentTemplate[] = [
   }),
   builtin({
     id: 'builtin:product-designer',
-    displayName: 'Product Designer',
-    description: 'Polishes UX, copy, and visual hierarchy. Pairs well with the Frontend Engineer.',
+    displayName: '프로덕트 디자이너',
+    description: 'UX, 문구, 시각적 위계를 다듬습니다. 프론트엔드 엔지니어와 함께 일하기 좋습니다.',
     icon: '✨',
     tags: ['design', 'ux'],
     character: 'wizard',

@@ -30,10 +30,10 @@ export function TemplateCard({ template, installedSkills, onUse, onEdit, onDupli
           <div className="flex items-baseline gap-2 flex-wrap">
             <h3 className="font-semibold text-foreground truncate">{template.displayName}</h3>
             {template.builtin && !template.overridden && (
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground bg-secondary px-1.5 py-0.5">Built-in</span>
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground bg-secondary px-1.5 py-0.5">기본 제공</span>
             )}
             {template.builtin && template.overridden && (
-              <span className="text-[10px] uppercase tracking-wider text-primary bg-primary/10 px-1.5 py-0.5">Customized</span>
+              <span className="text-[10px] uppercase tracking-wider text-primary bg-primary/10 px-1.5 py-0.5">맞춤 설정됨</span>
             )}
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -53,7 +53,7 @@ export function TemplateCard({ template, installedSkills, onUse, onEdit, onDupli
                 <span
                   key={skill}
                   className="text-[10px] px-1.5 py-0.5 border bg-secondary border-border text-muted-foreground"
-                  title="Skill installed"
+                  title="설치된 스킬"
                 >
                   {skill}
                 </span>
@@ -65,7 +65,7 @@ export function TemplateCard({ template, installedSkills, onUse, onEdit, onDupli
                   key={skill}
                   onClick={(e) => { e.stopPropagation(); onInstallSkill(skill); }}
                   className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 border bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 hover:border-amber-500/50 transition-colors cursor-pointer"
-                  title={`Install skill "${skill}"`}
+                  title={`"${skill}" 스킬 설치`}
                 >
                   <Plus className="w-2.5 h-2.5" />
                   {skill}
@@ -76,7 +76,7 @@ export function TemplateCard({ template, installedSkills, onUse, onEdit, onDupli
               <span
                 key={skill}
                 className="text-[10px] px-1.5 py-0.5 border bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400"
-                title="Skill not installed — visit the Skills page to install"
+                title="설치되지 않은 스킬 — 스킬 페이지에서 설치하세요"
               >
                 {skill}
               </span>
@@ -87,7 +87,7 @@ export function TemplateCard({ template, installedSkills, onUse, onEdit, onDupli
 
       {missingSkills.length > 0 && (
         <p className="text-[11px] text-amber-700 dark:text-amber-400 mb-3">
-          {missingSkills.length} skill{missingSkills.length > 1 ? 's' : ''} not installed yet
+          아직 설치되지 않은 스킬 {missingSkills.length}개
         </p>
       )}
 
@@ -97,13 +97,13 @@ export function TemplateCard({ template, installedSkills, onUse, onEdit, onDupli
           className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-foreground text-background text-xs font-medium hover:bg-foreground/90 transition-colors"
         >
           <Play className="w-3 h-3" />
-          Use this template
+          이 템플릿 사용
         </button>
         {onDuplicate && (
           <button
             onClick={onDuplicate}
             className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-            title="Duplicate"
+            title="복제"
           >
             <Copy className="w-3.5 h-3.5" />
           </button>
@@ -112,7 +112,7 @@ export function TemplateCard({ template, installedSkills, onUse, onEdit, onDupli
           <button
             onClick={onExport}
             className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-            title="Export as JSON"
+            title="JSON으로 내보내기"
           >
             <Download className="w-3.5 h-3.5" />
           </button>
@@ -121,7 +121,7 @@ export function TemplateCard({ template, installedSkills, onUse, onEdit, onDupli
           <button
             onClick={onEdit}
             className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-            title="Edit"
+            title="편집"
           >
             <Pencil className="w-3.5 h-3.5" />
           </button>
@@ -130,7 +130,7 @@ export function TemplateCard({ template, installedSkills, onUse, onEdit, onDupli
           <button
             onClick={onReset}
             className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-            title="Reset to default"
+            title="기본값으로 초기화"
           >
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
@@ -139,7 +139,7 @@ export function TemplateCard({ template, installedSkills, onUse, onEdit, onDupli
           <button
             onClick={onDelete}
             className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-            title="Delete"
+            title="삭제"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
