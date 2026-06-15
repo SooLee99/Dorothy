@@ -46,12 +46,19 @@ interface RunSummary {
 interface ApiResponse {
   ok: boolean;
   repo: string;
+  project: string;
+  projects: { id: string; label: string }[];
   generatedAt: string;
   source: { github: string; local: string };
   runs: RunSummary[];
   latestArtifacts: { name: string; sizeKb: number; expired: boolean }[];
   localCaptures: { name: string; path: string }[];
   localReportPath: string | null;
+}
+
+/** 캡처/리포트를 HTTP로 서빙(local-file:// 대신) — 브라우저·Electron 양쪽 표시. */
+function captureUrl(absPath: string): string {
+  return `/api/dorothy/test-results/capture?path=${encodeURIComponent(absPath)}`;
 }
 
 function fmt(iso: string): string {
@@ -112,27 +119,32 @@ export default function TestResultsDashboard() {
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [zoom, setZoom] = useState<string | null>(null); // local-file:// path of enlarged capture
+  const [zoom, setZoom] = useState<string | null>(null); // 확대 캡처의 절대경로
   const [lastOk, setLastOk] = useState<number | null>(null); // fireauto ①: 마지막 성공 수신(클라이언트)
+  const [projectId, setProjectId] = useState<string>(''); // 선택 프로젝트(빈값=API 기본=첫 프로젝트)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (pid?: string) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/dorothy/test-results', { cache: 'no-store' });
+      const q = pid ? `?project=${encodeURIComponent(pid)}` : '';
+      const res = await fetch(`/api/dorothy/test-results${q}`, { cache: 'no-store' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setData(await res.json());
+      const json: ApiResponse = await res.json();
+      setData(json);
+      if (!projectId && json.project) setProjectId(json.project);
       setLastOk(Date.now());
     } catch (e) {
       setError(e instanceof Error ? e.message : 'load failed');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void load(projectId || undefined);
+    // projectId 변경 시 재조회
+  }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const runs = data?.runs ?? [];
   const captures = data?.localCaptures ?? [];
@@ -149,7 +161,7 @@ export default function TestResultsDashboard() {
           {/* fireauto ①: 클라이언트측 신선도(스냅샷 age·stale 드러냄) — 서버 generatedAt와 별개로 살아있는지 표시 */}
           <FreshnessBadge lastSuccessAt={lastOk} pollMs={30000} ok={!error} label="수신" />
           <button
-            onClick={() => void load()}
+            onClick={() => void load(projectId || undefined)}
             className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-border hover:bg-muted transition-colors"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> 새로고침
@@ -169,6 +181,28 @@ export default function TestResultsDashboard() {
           '불러오는 중…'
         )}
       </p>
+
+      {/* 프로젝트별 탭 — 데이터에 projects[] 있으면 표시 */}
+      {(data?.projects?.length ?? 0) > 1 && (
+        <div className="flex items-center gap-1.5 mb-5 border-b border-border">
+          {data!.projects.map(p => {
+            const active = (projectId || data!.project) === p.id;
+            return (
+              <button
+                key={p.id}
+                onClick={() => setProjectId(p.id)}
+                className={`px-3 py-1.5 text-sm font-medium -mb-px border-b-2 transition-colors ${
+                  active
+                    ? 'border-blue-400 text-foreground'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {p.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 text-sm text-red-400 flex items-center gap-2">
@@ -262,7 +296,7 @@ export default function TestResultsDashboard() {
           <h2 className="text-sm font-semibold text-muted-foreground">단계별 캡처 (로컬 마지막 실행)</h2>
           {data?.localReportPath && (
             <a
-              href={`local-file://${data.localReportPath}`}
+              href={captureUrl(data.localReportPath)}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-1 text-xs text-blue-400 hover:underline"
@@ -275,7 +309,7 @@ export default function TestResultsDashboard() {
           <EmptyState
             icon={<ImageIcon className="w-8 h-8" />}
             title="로컬 캡처가 없습니다."
-            hint="bueongi에서 `npx playwright test`를 한 번 실행하면 screenshots/가 생성돼 여기 표시됩니다. (Electron 데스크톱 전용)"
+            hint="해당 프로젝트에서 `npx playwright test`를 한 번 실행하면 screenshots/가 생성돼 여기 표시됩니다."
           />
         ) : (
           <>
@@ -288,7 +322,7 @@ export default function TestResultsDashboard() {
                   title={c.name}
                 >
                   <img
-                    src={`local-file://${c.path}`}
+                    src={captureUrl(c.path)}
                     alt={c.name}
                     className="w-full h-32 object-cover object-top"
                     loading="lazy"
@@ -298,7 +332,7 @@ export default function TestResultsDashboard() {
               ))}
             </div>
             <p className="text-[11px] text-muted-foreground/70 mt-2">
-              ※ 결과는 GitHub(권위), 캡처는 ★로컬 마지막 실행 기준 — 항상 일치하지 않을 수 있음(웹 모드에선 캡처 미표시).
+              ※ 결과는 GitHub(권위), 캡처는 ★로컬 마지막 실행 기준 — 항상 일치하지 않을 수 있음.
             </p>
           </>
         )}
@@ -328,7 +362,7 @@ export default function TestResultsDashboard() {
           onClick={() => setZoom(null)}
         >
           <img
-            src={`local-file://${zoom}`}
+            src={captureUrl(zoom)}
             alt="capture"
             className="max-w-full max-h-full rounded-lg shadow-2xl"
             onClick={e => e.stopPropagation()}

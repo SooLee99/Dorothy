@@ -1,32 +1,27 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { E2EProject, getE2EProject, listE2EProjects } from '@/lib/testResultsProjects';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 /**
- * E2E Test Results (/api/dorothy/test-results) — ⑤ 대시보드 (가) 범위.
+ * E2E Test Results (/api/dorothy/test-results?project=<id>) — ⑤ 대시보드 (가) 범위.
  *
- * ②③의 bueongi E2E 산출물을 ★읽기 표시만 한다(데이터 생성 X):
+ * ②③의 E2E 산출물을 ★읽기 표시만 한다(데이터 생성 X):
  *   1. GitHub Actions API — E2E 워크플로 run 목록(통과/실패·브랜치·시각·run URL·artifact).
- *   2. 로컬 캡처 — playwright-report/index.html + screenshots/*.png 절대경로(local-file:// 서빙용).
+ *   2. 로컬 캡처 — playwright-report/index.html + screenshots/*.png 절대경로.
+ *      (캡처 표시는 /api/dorothy/test-results/capture가 HTTP로 서빙 — 브라우저·Electron 양쪽.)
+ *
+ * ★프로젝트별: project 쿼리(bueongi|triplan, 기본 첫 프로젝트)로 구분.
+ *   레지스트리=src/lib/testResultsProjects.ts. 응답에 projects[] 포함(UI 탭용).
  *
  * SECURITY: appFactoryGithub 토큰은 ★서버측에서만 읽어 GitHub 호출 인증에 쓰고,
  *   응답으로 ★절대 반환하지 않는다(integrations/route.ts의 "평문 시크릿 금지" 계약과 동일).
- *
- * Canary: bueongi 한정(REPO 상수). 자율 PR 수집 파이프라인은 부재 → 라이브 GitHub 조회로 대체.
  */
 
-const REPO_OWNER = 'soo-ai-agent';
-const REPO_NAME = 'bueongi';
-const WORKFLOW_HINT = 'e2e'; // run.name / workflow path 매칭(대소문자 무시)
-// 단일 머신(App Factory) 전제의 로컬 캡처 경로. 환경 다르면 source.local='none'로 폴백.
-const LOCAL_FRONTEND = path.join(
-  os.homedir(),
-  'workspace/source-code/apps/bueongi/frontend-src',
-);
 const INTEGRATION_CFG = path.join(os.homedir(), '.dorothy', 'integration-settings.json');
 
 interface RunSummary {
@@ -72,9 +67,11 @@ async function gh(urlPath: string, token: string): Promise<unknown> {
   }
 }
 
-function scanLocalCaptures(): { captures: { name: string; path: string }[]; reportPath: string | null } {
-  const shotsDir = path.join(LOCAL_FRONTEND, 'screenshots');
-  const reportFile = path.join(LOCAL_FRONTEND, 'playwright-report', 'index.html');
+function scanLocalCaptures(
+  project: E2EProject,
+): { captures: { name: string; path: string }[]; reportPath: string | null } {
+  const shotsDir = path.join(project.frontendPath, 'screenshots');
+  const reportFile = path.join(project.frontendPath, 'playwright-report', 'index.html');
   let captures: { name: string; path: string }[] = [];
   try {
     if (fs.existsSync(shotsDir) && fs.statSync(shotsDir).isDirectory()) {
@@ -91,20 +88,28 @@ function scanLocalCaptures(): { captures: { name: string; path: string }[]; repo
   return { captures, reportPath };
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const generatedAt = new Date().toISOString();
-  const repo = `${REPO_OWNER}/${REPO_NAME}`;
-  const { captures, reportPath } = scanLocalCaptures();
+  const projectId = req.nextUrl.searchParams.get('project');
+  const project = getE2EProject(projectId);
+  const repo = project.repoOwner && project.repoName ? `${project.repoOwner}/${project.repoName}` : project.id;
+
+  const { captures, reportPath } = scanLocalCaptures(project);
 
   const token = readToken();
   let runs: RunSummary[] = [];
   let latestArtifacts: { name: string; sizeKb: number; expired: boolean }[] = [];
-  let githubSource: string = token ? 'ok' : 'no-token';
+  // repo 미설정 프로젝트는 GitHub 조회 생략(로컬 캡처만).
+  let githubSource: string = !project.repoOwner || !project.repoName
+    ? 'n/a'
+    : token
+      ? 'ok'
+      : 'no-token';
 
-  if (token) {
+  if (token && project.repoOwner && project.repoName) {
     try {
       const data = (await gh(
-        `/repos/${REPO_OWNER}/${REPO_NAME}/actions/runs?per_page=15`,
+        `/repos/${project.repoOwner}/${project.repoName}/actions/runs?per_page=15`,
         token,
       )) as { workflow_runs?: Array<Record<string, unknown>> };
       const all = Array.isArray(data.workflow_runs) ? data.workflow_runs : [];
@@ -112,7 +117,7 @@ export async function GET() {
         .filter(r => {
           const name = String(r.name ?? '').toLowerCase();
           const wf = String(r.path ?? '').toLowerCase();
-          return name.includes(WORKFLOW_HINT) || wf.includes(WORKFLOW_HINT);
+          return name.includes(project.workflowHint) || wf.includes(project.workflowHint);
         })
         .slice(0, 10)
         .map(r => ({
@@ -130,7 +135,7 @@ export async function GET() {
       if (runs.length > 0) {
         try {
           const art = (await gh(
-            `/repos/${REPO_OWNER}/${REPO_NAME}/actions/runs/${runs[0].id}/artifacts`,
+            `/repos/${project.repoOwner}/${project.repoName}/actions/runs/${runs[0].id}/artifacts`,
             token,
           )) as { artifacts?: Array<Record<string, unknown>> };
           latestArtifacts = (art.artifacts ?? []).map(a => ({
@@ -150,6 +155,8 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     repo,
+    project: project.id,
+    projects: listE2EProjects(),
     generatedAt,
     source: {
       github: githubSource,
