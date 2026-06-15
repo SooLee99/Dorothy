@@ -34,6 +34,7 @@ import { useElectronAgents, useElectronFS, useElectronSkills, isElectron } from 
 import type { ClaudeProject } from '@/lib/claude-code';
 import type { AgentStatus, AgentCharacter } from '@/types/electron';
 import NewChatModal from '@/components/NewChatModal';
+import { NewTaskModal } from '@/components/KanbanBoard/components/NewTaskModal'; // 프로젝트 상세 작업 추가
 import { FreshnessBadge } from '@/components/Freshness'; // 갭2: 신선도 배지
 
 // Generate consistent colors for projects based on name
@@ -94,6 +95,7 @@ export default function ProjectsPage() {
   const { projects: electronProjects, openFolderDialog } = useElectronFS();
   const { installedSkills, refresh: refreshSkills } = useElectronSkills();
   const [selectedProject, setSelectedProject] = useState<ClaudeProject | null>(null);
+  const [showAddTaskModal, setShowAddTaskModal] = useState(false); // 프로젝트 상세 작업 추가 모달
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'favorites' | 'active' | 'hidden'>('active');
   const [favorites, setFavorites] = useState<string[]>([]);
@@ -892,12 +894,22 @@ export default function ProjectsPage() {
                       </p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => setSelectedProject(null)}
-                    className="p-2 hover:bg-secondary transition-colors shrink-0"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {/* 프로젝트 상세에서 이 프로젝트로 칸반 작업 추가(슬랙 없이 대시보드에서) */}
+                    <button
+                      onClick={() => setShowAddTaskModal(true)}
+                      className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-border hover:bg-muted transition-colors"
+                      title="이 프로젝트에 칸반 작업 추가"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> 작업 추가
+                    </button>
+                    <button
+                      onClick={() => setSelectedProject(null)}
+                      className="p-2 hover:bg-secondary transition-colors shrink-0"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Git Branch */}
@@ -1236,6 +1248,25 @@ export default function ProjectsPage() {
         initialProjectPath={selectedProject?.path}
         initialStep={2}
       />
+
+      {/* 프로젝트 상세 → 칸반 작업 추가 모달(이 프로젝트로 prefill) */}
+      {showAddTaskModal && selectedProject && (
+        <NewTaskModal
+          initialProjectPath={selectedProject.path}
+          onClose={() => setShowAddTaskModal(false)}
+          onCreate={async (data) => {
+            await window.electronAPI?.kanban?.create({
+              title: data.title,
+              description: data.description,
+              projectId: data.projectId,
+              projectPath: data.projectPath,
+              requiredSkills: data.requiredSkills,
+              priority: data.priority,
+            });
+            setShowAddTaskModal(false);
+          }}
+        />
+      )}
     </div>
   );
 }

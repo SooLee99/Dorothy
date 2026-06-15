@@ -142,7 +142,8 @@ async function parseKanbanIntent(text: string): Promise<KanbanIntent | null> {
 }
 
 // ── 칸반 직접 create(IPC 우회, kanban-handlers 의 create 로직 미러) ──
-function createTaskDirect(params: {
+//   export — 슬랙 "task" 명령(slack-bot handleSlackCommand)에서도 재사용.
+export function createTaskDirect(params: {
   title: string;
   description: string;
   projectId: string;

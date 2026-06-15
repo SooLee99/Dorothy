@@ -7,7 +7,7 @@ import { formatSlackAgentStatus, isSuperAgent, getSuperAgent, getSuperAgentInstr
 import { agents, saveAgents, initAgentPty } from '../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
 import { getMainWindow } from '../core/window-manager';
-import { handleTasksChannelMessage } from './slack-kanban';
+import { handleTasksChannelMessage, createTaskDirect } from './slack-kanban';
 import { app } from 'electron';
 
 // Slack bot state
@@ -422,6 +422,29 @@ export async function handleSlackCommand(
     } catch (err) {
       console.error('Failed to get usage stats:', err);
       await say(':x: Failed to get usage stats');
+    }
+    return;
+  }
+
+  // 슬랙에서 칸반 작업 추가: `task <설명>` 또는 `add <설명>`. (전용 채널 불요·@멘션으로 기존 채널서 동작·자유대화 무손상)
+  if (lowerText.startsWith('task ') || lowerText.startsWith('add ')) {
+    const prefixLen = lowerText.startsWith('task ') ? 5 : 4;
+    const title = text.slice(prefixLen).trim();
+    if (!title) {
+      await say(':x: 사용법: `task <작업 설명>` (또는 `add <설명>`). 예: `task bueongi 공유 화면 버그 수정`');
+      return;
+    }
+    // 프로젝트 추정: bueongi 키워드면 bueongi, 아니면 triplan 기본(대시보드에서 재배정 가능).
+    const isBueongi = /bueongi|부엉/i.test(title);
+    const proj = isBueongi
+      ? { id: 'bueongi', path: '/Users/soo/workspace/source-code/apps/bueongi/frontend-src' }
+      : { id: 'triplan', path: '/Users/soo/workspace/source-code/triplan' };
+    try {
+      const created = createTaskDirect({ title, description: '', projectId: proj.id, projectPath: proj.path });
+      mainWindow?.webContents.send('kanban:task-created', created);
+      await say(`:white_check_mark: 칸반 backlog 추가: *${created.title}* (project: ${proj.id})\n대시보드 /kanban 에서 확인·재배정·우선순위 조정 가능.`);
+    } catch (err) {
+      await say(`:x: 작업 추가 실패: ${err instanceof Error ? err.message : String(err)}`);
     }
     return;
   }

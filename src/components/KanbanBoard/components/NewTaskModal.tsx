@@ -9,6 +9,7 @@ import { isElectron } from '@/hooks/useElectron';
 interface NewTaskModalProps {
   onClose: () => void;
   onCreate: (data: KanbanTaskCreate) => Promise<void>;
+  initialProjectPath?: string; // 프로젝트 상세보기에서 열 때 해당 프로젝트로 prefill
 }
 
 interface Project {
@@ -48,7 +49,7 @@ function FileTypeIcon({ type }: { type: TaskAttachment['type'] }) {
   }
 }
 
-export function NewTaskModal({ onClose, onCreate }: NewTaskModalProps) {
+export function NewTaskModal({ onClose, onCreate, initialProjectPath }: NewTaskModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>('quick');
 
   // Quick mode state
@@ -74,7 +75,7 @@ export function NewTaskModal({ onClose, onCreate }: NewTaskModalProps) {
   const [skillInput, setSkillInput] = useState('');
   const [labels, setLabels] = useState<string[]>([]);
   const [labelInput, setLabelInput] = useState('');
-  const [selectedProjectPath, setSelectedProjectPath] = useState('');
+  const [selectedProjectPath, setSelectedProjectPath] = useState(initialProjectPath || '');
   const [projects, setProjects] = useState<Project[]>([]);
   const [favoriteProjects, setFavoriteProjects] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -104,8 +105,10 @@ export function NewTaskModal({ onClose, onCreate }: NewTaskModalProps) {
           });
         setProjects(visibleProjects);
 
-        // Use default project if set, otherwise first visible project
-        if (settings?.defaultProjectPath && visibleProjects.some((p: Project) => p.path === settings.defaultProjectPath)) {
+        // initialProjectPath(프로젝트 상세보기에서 prefill)가 있으면 그것 우선 — default 덮어쓰지 않음.
+        if (initialProjectPath) {
+          setSelectedProjectPath(initialProjectPath);
+        } else if (settings?.defaultProjectPath && visibleProjects.some((p: Project) => p.path === settings.defaultProjectPath)) {
           setSelectedProjectPath(settings.defaultProjectPath);
         } else if (visibleProjects.length > 0) {
           setSelectedProjectPath(visibleProjects[0].path);
