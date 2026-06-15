@@ -24,6 +24,7 @@ import { useElectronAgents } from '@/hooks/useElectron';
 import StatsCard from './StatsCard';
 import ControlCenter from './ControlCenter';
 import AutonomyStatusPanel from './AutonomyStatusPanel';
+import SystemStatusPanel from '@/components/SystemStatusPanel'; // 갭1: breaker-eye(eff·worker·④enforce·breaker) 홈 승격(고립 해소)
 import dynamic from 'next/dynamic';
 
 // Dynamically import CanvasView to avoid SSR issues
@@ -253,6 +254,9 @@ export default function Dashboard() {
 
       {/* Part H / E-2 — 자율운영 상태(liveness 4-state·pause·감독·예산·provider·에스컬레이션) */}
       <AutonomyStatusPanel />
+
+      {/* 갭1 — breaker-eye 통제 패널(used% raw/eff·worker tracked/untracked·④ enforce·breaker 사유). 신선도 배지 상주. read-only */}
+      <SystemStatusPanel />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
