@@ -91,6 +91,20 @@ const SEVERITY_OPTIONS: { id: 'all' | DiagnosticSeverity; label: string }[] = [
   { id: 'low',      label: '낮음' },
 ];
 
+// enum 값을 카드/배지에서 한글로 표시하기 위한 매핑(데이터는 그대로, 표시만 한글).
+const SEVERITY_LABEL: Record<DiagnosticSeverity, string> = {
+  critical: '치명적', high: '높음', medium: '보통', low: '낮음',
+};
+const SOURCE_LABEL: Record<DiagnosticSource, string> = {
+  ci_failure: 'CI 실패', resume_failure: '재개 실패', qa_failure: 'QA 실패',
+  orchestrator: '오케스트레이터', agent_session: '에이전트 세션', github_review: 'GitHub 리뷰',
+  approval_block: '승인 차단', rate_limit: '사용량 제한', hook_event: '훅 이벤트', manual: '수동',
+};
+const STATUS_LABEL: Record<DiagnosticStatus, string> = {
+  open: '열림', investigating: '조사 중', fixed: '해결됨', ignored: '무시됨',
+  converted_to_improvement: '개선으로 변환됨', converted_to_task: '작업으로 변환됨',
+};
+
 export default function DiagnosticsDashboard() {
   const [statusFilter, setStatusFilter] = useState<'all' | DiagnosticStatus>('all');
   const [sourceFilter, setSourceFilter] = useState<'all' | DiagnosticSource>('all');
@@ -160,9 +174,9 @@ export default function DiagnosticsDashboard() {
     try {
       const res = await dorothyRunsClient.diagnostics.updateStatus({ id, status });
       if (!res.ok) {
-        setBanner({ kind: 'error', msg: res.error ?? 'updateStatus failed' });
+        setBanner({ kind: 'error', msg: res.error ?? '상태 업데이트 실패' });
       } else {
-        setBanner({ kind: 'info', msg: `Diagnostic marked ${status}.` });
+        setBanner({ kind: 'info', msg: `진단을 "${STATUS_LABEL[status] ?? status}"(으)로 표시했습니다.` });
         await refresh();
       }
     } finally {
@@ -173,9 +187,9 @@ export default function DiagnosticsDashboard() {
   const onConvert = async (d: Diagnostic) => {
     if (typeof window !== 'undefined') {
       const ok = window.confirm(
-        `Convert this Diagnostic to an ImprovementSignal?\n\n${d.title}\n\n` +
+        `이 진단을 개선 신호(ImprovementSignal)로 변환할까요?\n\n${d.title}\n\n` +
         `${(d.summary ?? '').slice(0, 240)}\n\n` +
-        'This action is reversible only by editing the ImprovementSignal in /improvements.',
+        '이 작업은 /improvements 에서 개선 신호를 편집해야만 되돌릴 수 있습니다.',
       );
       if (!ok) return;
     }
@@ -183,9 +197,9 @@ export default function DiagnosticsDashboard() {
     try {
       const res = await dorothyRunsClient.diagnostics.convertToImprovement({ id: d.id });
       if (!res.ok) {
-        setBanner({ kind: 'error', msg: res.error ?? 'convert failed' });
+        setBanner({ kind: 'error', msg: res.error ?? '변환 실패' });
       } else {
-        setBanner({ kind: 'info', msg: 'Converted to ImprovementSignal. See /improvements.' });
+        setBanner({ kind: 'info', msg: '개선 신호로 변환했습니다. /improvements 에서 확인하세요.' });
         await refresh();
       }
     } finally {
@@ -199,9 +213,9 @@ export default function DiagnosticsDashboard() {
   const onConvertToSkillCandidate = async (d: Diagnostic) => {
     if (typeof window !== 'undefined') {
       const ok = window.confirm(
-        `Convert this Diagnostic to a Skill Candidate?\n\n${d.title}\n\n` +
+        `이 진단을 스킬 후보(Skill Candidate)로 변환할까요?\n\n${d.title}\n\n` +
         `${(d.summary ?? '').slice(0, 240)}\n\n` +
-        'Creates a candidate in /skill-candidates for human review. No skill file is generated.',
+        '사람 검토용 후보를 /skill-candidates 에 생성합니다. 스킬 파일은 생성되지 않습니다.',
       );
       if (!ok) return;
     }
@@ -209,9 +223,9 @@ export default function DiagnosticsDashboard() {
     try {
       const res = await dorothyRunsClient.skillCandidates.fromDiagnostic({ id: d.id });
       if (!res.ok) {
-        setBanner({ kind: 'error', msg: res.error ?? 'fromDiagnostic failed' });
+        setBanner({ kind: 'error', msg: res.error ?? '스킬 후보 변환 실패' });
       } else {
-        setBanner({ kind: 'info', msg: 'Skill Candidate created. See /skill-candidates.' });
+        setBanner({ kind: 'info', msg: '스킬 후보를 생성했습니다. /skill-candidates 에서 확인하세요.' });
       }
     } finally {
       setBusyId(null);
@@ -223,7 +237,7 @@ export default function DiagnosticsDashboard() {
       <Shell>
         <div className="p-4 border border-amber-500/30 bg-amber-500/5 text-amber-500 text-sm flex items-center gap-2">
           <AlertCircle className="w-4 h-4" />
-          Dorothy run database is not available — start the Electron app to populate this view.
+          Dorothy 실행 데이터베이스를 사용할 수 없습니다 — 이 화면을 채우려면 Electron 앱을 실행하세요.
         </div>
       </Shell>
     );
@@ -259,12 +273,12 @@ export default function DiagnosticsDashboard() {
 
       {/* KPI row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 mb-4">
-        <Kpi label="Open"          value={counts.open}           color="text-blue-500" />
-        <Kpi label="Investigating" value={counts.investigating}  color="text-amber-500" />
-        <Kpi label="High/Critical" value={counts.highOrCritical} color="text-orange-500" highlight={counts.highOrCritical > 0} />
-        <Kpi label="Critical"      value={counts.critical}       color="text-rose-500" highlight={counts.critical > 0} />
-        <Kpi label="Fixed"         value={counts.fixed}          color="text-emerald-500" />
-        <Kpi label="Total"         value={counts.total}          color="text-foreground" />
+        <Kpi label="열림"          value={counts.open}           color="text-blue-500" />
+        <Kpi label="조사 중"        value={counts.investigating}  color="text-amber-500" />
+        <Kpi label="높음/치명적"     value={counts.highOrCritical} color="text-orange-500" highlight={counts.highOrCritical > 0} />
+        <Kpi label="치명적"         value={counts.critical}       color="text-rose-500" highlight={counts.critical > 0} />
+        <Kpi label="해결됨"         value={counts.fixed}          color="text-emerald-500" />
+        <Kpi label="전체"          value={counts.total}          color="text-foreground" />
       </div>
 
       {/* Filter bar */}
@@ -308,14 +322,14 @@ export default function DiagnosticsDashboard() {
             type="checkbox"
             checked={openOnly}
             onChange={e => setOpenOnly(e.target.checked)}
-          /> only open
+          /> 열림만
         </label>
         <label className="inline-flex items-center gap-1 text-muted-foreground">
           <input
             type="checkbox"
             checked={recurringOnly}
             onChange={e => setRecurringOnly(e.target.checked)}
-          /> recurring (≥2)
+          /> 반복(≥2)
         </label>
         <div className="ml-auto flex items-center gap-1 px-2 py-1 bg-card border border-border">
           <Search className="w-3 h-3 text-muted-foreground" />
@@ -423,13 +437,13 @@ export function DiagnosticCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap text-xs">
             <span className={`inline-flex items-center px-2 py-0.5 font-medium border ${DIAGNOSTIC_SEVERITY_BADGE[d.severity]}`}>
-              {d.severity}
+              {SEVERITY_LABEL[d.severity] ?? d.severity}
             </span>
             <span className={`inline-flex items-center px-2 py-0.5 font-medium border ${DIAGNOSTIC_SOURCE_BADGE[d.source]}`}>
-              {d.source}
+              {SOURCE_LABEL[d.source] ?? d.source}
             </span>
             <span className={`inline-flex items-center px-2 py-0.5 font-medium border ${DIAGNOSTIC_STATUS_BADGE[d.status]}`}>
-              {d.status.replace(/_/g, ' ')}
+              {STATUS_LABEL[d.status] ?? d.status.replace(/_/g, ' ')}
             </span>
             {(d.occurrenceCount ?? 1) > 1 && (
               <span className="inline-flex items-center px-2 py-0.5 bg-amber-500/10 text-amber-500 border border-amber-500/30">
@@ -496,28 +510,28 @@ function DiagnosticDetailPanel({
   return (
     <div className="border-t border-border p-4 space-y-3">
       {d.summary && (
-        <Field label="Summary">
+        <Field label="요약">
           <p className="text-sm text-foreground whitespace-pre-wrap">
             {maskSensitivePreview((d.summary ?? '').slice(0, PREVIEW_MAX))}
           </p>
         </Field>
       )}
       {d.rootCause && (
-        <Field label="Root cause">
+        <Field label="근본 원인">
           <p className="text-sm text-foreground whitespace-pre-wrap">
             {maskSensitivePreview((d.rootCause ?? '').slice(0, PREVIEW_MAX))}
           </p>
         </Field>
       )}
       {d.impact && (
-        <Field label="Impact">
+        <Field label="영향">
           <p className="text-sm text-foreground whitespace-pre-wrap">
             {maskSensitivePreview((d.impact ?? '').slice(0, PREVIEW_MAX))}
           </p>
         </Field>
       )}
       {d.suggestedFix && (
-        <Field label="Suggested fix">
+        <Field label="제안된 해결책">
           <p className="text-sm text-foreground whitespace-pre-wrap flex items-start gap-2">
             <Lightbulb className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
             <span>{maskSensitivePreview((d.suggestedFix ?? '').slice(0, PREVIEW_MAX))}</span>
@@ -528,15 +542,15 @@ function DiagnosticDetailPanel({
       <EvidenceSection diagnostic={d} />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-muted-foreground">
-        <Meta label="Diagnostic id" value={<code className="font-mono">{d.id}</code>} />
+        <Meta label="진단 ID" value={<code className="font-mono">{d.id}</code>} />
         {d.fingerprint && (
-          <Meta label="Fingerprint" value={<code className="font-mono">{d.fingerprint.slice(0, 80)}</code>} />
+          <Meta label="지문" value={<code className="font-mono">{d.fingerprint.slice(0, 80)}</code>} />
         )}
-        <Meta label="Created" value={formatAbsolute(d.createdAt)} />
-        <Meta label="Updated" value={formatAbsolute(d.updatedAt)} />
+        <Meta label="생성" value={formatAbsolute(d.createdAt)} />
+        <Meta label="업데이트" value={formatAbsolute(d.updatedAt)} />
         {d.relatedImprovementSignalId && (
           <Meta
-            label="Improvement"
+            label="개선"
             value={
               <Link
                 href="/improvements"
@@ -554,7 +568,7 @@ function DiagnosticDetailPanel({
           href={`/runs/${d.runId}`}
           className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
         >
-          Open Run timeline <ArrowRight className="w-3 h-3" />
+          실행 타임라인 열기 <ArrowRight className="w-3 h-3" />
         </Link>
       )}
 
@@ -562,28 +576,28 @@ function DiagnosticDetailPanel({
       <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border">
         <ActionButton
           icon={<ShieldAlert className="w-3 h-3" />}
-          label="Investigating"
+          label="조사 중"
           tone="amber"
           disabled={busy || d.status === 'investigating' || alreadyConverted}
           onClick={() => onUpdateStatus?.(d.id, 'investigating')}
         />
         <ActionButton
           icon={<CheckCircle2 className="w-3 h-3" />}
-          label="Mark fixed"
+          label="해결됨으로 표시"
           tone="emerald"
           disabled={busy || d.status === 'fixed' || alreadyConverted}
           onClick={() => onUpdateStatus?.(d.id, 'fixed')}
         />
         <ActionButton
           icon={<AlertTriangle className="w-3 h-3" />}
-          label="Ignore"
+          label="무시"
           tone="muted"
           disabled={busy || d.status === 'ignored' || alreadyConverted}
           onClick={() => onUpdateStatus?.(d.id, 'ignored')}
         />
         <ActionButton
           icon={<Wrench className="w-3 h-3" />}
-          label="Convert to Improvement"
+          label="개선으로 변환"
           tone="purple"
           disabled={busy || alreadyConverted}
           title={alreadyConverted ? '이미 변환됨' : undefined}
@@ -592,10 +606,10 @@ function DiagnosticDetailPanel({
         {onConvertToSkillCandidate && (
           <ActionButton
             icon={<Layers className="w-3 h-3" />}
-            label="Convert to Skill Candidate"
+            label="스킬 후보로 변환"
             tone="cyan"
             disabled={busy}
-            title="Create a candidate in /skill-candidates for human review. No skill file is generated."
+            title="사람 검토용 후보를 /skill-candidates 에 생성합니다. 스킬 파일은 생성되지 않습니다."
             onClick={() => onConvertToSkillCandidate(d)}
           />
         )}
@@ -624,8 +638,8 @@ function EvidenceSection({ diagnostic: d }: { diagnostic: Diagnostic }) {
   return (
     <div>
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-        Evidence ({d.evidenceHookEventIds.length} hook event{d.evidenceHookEventIds.length === 1 ? '' : 's'}
-        {d.evidenceArtifactIds?.length ? ` · ${d.evidenceArtifactIds.length} artifact${d.evidenceArtifactIds.length === 1 ? '' : 's'}` : ''})
+        증거 (훅 이벤트 {d.evidenceHookEventIds.length}개
+        {d.evidenceArtifactIds?.length ? ` · 산출물 ${d.evidenceArtifactIds.length}개` : ''})
       </div>
       {matched.length > 0 ? (
         <ul className="space-y-1.5 mt-1">
@@ -649,12 +663,12 @@ function EvidenceSection({ diagnostic: d }: { diagnostic: Diagnostic }) {
         </ul>
       ) : (
         <p className="text-[11px] text-muted-foreground italic">
-          Evidence rows not loaded yet — open the related Run to view its timeline.
+          증거 행이 아직 로드되지 않았습니다 — 관련 실행을 열어 타임라인을 확인하세요.
         </p>
       )}
       {d.evidenceArtifactIds?.length ? (
         <div className="mt-1 text-[10px] text-muted-foreground">
-          artifact ids: {d.evidenceArtifactIds.slice(0, 5).map(a => a.slice(0, 8)).join(', ')}
+          산출물 ID: {d.evidenceArtifactIds.slice(0, 5).map(a => a.slice(0, 8)).join(', ')}
         </div>
       ) : null}
     </div>
