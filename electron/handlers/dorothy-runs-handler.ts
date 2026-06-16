@@ -44,6 +44,7 @@ import {
   getPullRequest,
   listPullRequests,
   listPullRequestsByRun,
+  createOrUpdatePullRequest,
   getCIRun,
   listCIRuns,
   listCIRunsByRun,
@@ -63,6 +64,7 @@ import type {
   HookEventType,
   HookEventSeverity,
   HookEventSource,
+  PullRequestState,
 } from '../types/dorothy';
 import { listRateLimitEvents as listRateLimitEventsExt } from '../services/dorothy/rate-limit-service';
 import { RUN_MODE_POLICIES } from '../services/dorothy/run-mode-policy';
@@ -636,6 +638,101 @@ export function registerDorothyRunsHandlers(deps: DorothyRunsHandlerDeps = {}): 
     } catch (err) {
       console.error('[dorothy:pr:listByRun] failed', err);
       return fail(err instanceof Error ? err.message : 'list failed');
+    }
+  });
+
+  // Dead-screen fix (#죽은화면) — /pr gh 폴링(B안).
+  // GitHub REST에서 PR 목록을 직접 폴링해 pull_requests에 upsert. 토큰은
+  // ~/.dorothy/integration-settings.json의 appFactoryGithub.token, 대상 repo는
+  // 인자 → 설정(github.defaultOwner/defaultRepo) 순. webhook/외부설정 0으로
+  // 죽은 /pr 화면을 채운다(기존 webhook 경로와 병행, createOrUpdatePullRequest 재사용).
+  ipcMain.handle('dorothy:pr:syncFromGithub', async (_event, params?: { owner?: string; repo?: string; limit?: number }) => {
+    try {
+      if (!dbAvailable()) return fail('dorothy.db not initialized', true);
+
+      // 1) 설정 읽기 (토큰 + 기본 repo)
+      let token = '';
+      let defOwner = '';
+      let defRepo = '';
+      try {
+        const cfgPath = pathK.join(require('os').homedir() as string, '.dorothy', 'integration-settings.json');
+        const cfg = JSON.parse(fsK.readFileSync(cfgPath, 'utf-8')) as {
+          appFactoryGithub?: { token?: string };
+          github?: { defaultOwner?: string; defaultRepo?: string };
+        };
+        token = cfg?.appFactoryGithub?.token ?? '';
+        defOwner = cfg?.github?.defaultOwner ?? '';
+        defRepo = cfg?.github?.defaultRepo ?? '';
+      } catch {
+        return fail('integration-settings.json 읽기 실패 — 설정 > 연동에서 GitHub를 등록하세요');
+      }
+
+      const owner = (params?.owner || defOwner).trim();
+      const repo = (params?.repo || defRepo).trim();
+      if (!token) return fail('GitHub 토큰 없음 — 설정 > 연동에서 토큰을 등록하세요');
+      if (!owner || !repo) return fail('대상 repo 미설정 — owner/repo를 전달하거나 설정의 기본 repo를 지정하세요');
+
+      // 2) GitHub REST 폴링 (state=all, 최근 갱신순)
+      const per = Math.min(Math.max(params?.limit ?? 50, 1), 100);
+      const url = `https://api.github.com/repos/${owner}/${repo}/pulls?state=all&per_page=${per}&sort=updated&direction=desc`;
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'User-Agent': 'dorothy-pr-sync',
+        },
+      });
+      if (res.status === 401 || res.status === 403) {
+        if (res.headers.get('x-ratelimit-remaining') === '0') {
+          return fail('GitHub rate limit 도달 — 잠시 후 다시 시도하세요');
+        }
+        return fail(`GitHub 인증 실패(${res.status}) — 토큰 권한(repo)을 확인하세요`);
+      }
+      if (res.status === 404) return fail(`repo를 찾을 수 없음(${owner}/${repo}) — 이름/권한을 확인하세요`);
+      if (!res.ok) return fail(`GitHub 조회 실패(${res.status})`);
+
+      const prs = await res.json() as Array<{
+        number?: number; html_url?: string; title?: string; state?: string;
+        draft?: boolean; merged_at?: string | null; closed_at?: string | null;
+        head?: { ref?: string }; base?: { ref?: string };
+        requested_reviewers?: Array<{ login?: string }>;
+      }>;
+
+      // 3) upsert (webhook과 동일한 상태 매핑)
+      let synced = 0;
+      for (const pr of Array.isArray(prs) ? prs : []) {
+        if (!pr?.number) continue;
+        const state: PullRequestState = pr.draft
+          ? 'draft'
+          : pr.state === 'closed'
+            ? (pr.merged_at ? 'merged' : 'closed')
+            : 'open';
+        const reviewers = pr.requested_reviewers
+          ?.map(r => r.login)
+          .filter((s): s is string => typeof s === 'string')
+          .map(name => ({ name, state: 'pending' as const }));
+        const upserted = createOrUpdatePullRequest({
+          externalRef: `${owner}/${repo}#${pr.number}`,
+          owner,
+          repo,
+          number: pr.number,
+          url: pr.html_url ?? '',
+          branch: pr.head?.ref ?? '',
+          baseBranch: pr.base?.ref ?? '',
+          state,
+          title: pr.title ?? '',
+          reviewers,
+          mergedAt: pr.merged_at ?? null,
+          closedAt: pr.closed_at ?? null,
+          provider: 'github',
+        });
+        if (upserted) synced += 1;
+      }
+      return ok({ synced, owner, repo });
+    } catch (err) {
+      console.error('[dorothy:pr:syncFromGithub] failed', err);
+      return fail(err instanceof Error ? err.message : 'sync failed');
     }
   });
 

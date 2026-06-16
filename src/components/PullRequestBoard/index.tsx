@@ -28,6 +28,7 @@ import {
   useDorothyPullRequests,
   useDorothyCIRuns,
 } from '@/hooks/useDorothyRuns';
+import { dorothyRunsClient } from '@/lib/dorothyRunsClient';
 import type { PullRequest, PullRequestState, CIRun } from '@/types/dorothy';
 import {
   PullRequestStateBadge,
@@ -52,6 +53,9 @@ const STATE_FILTERS: { id: StateFilter; label: string }[] = [
 export default function PullRequestBoard() {
   const [stateFilter, setStateFilter] = useState<StateFilter>('all');
   const [query, setQuery] = useState('');
+  // Dead-screen fix (#죽은화면) — gh 폴링(B안) 수동 동기화 상태.
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   const { pullRequests, isLoading, error, dbUnavailable, refresh } = useDorothyPullRequests({
     state: stateFilter === 'all' ? undefined : stateFilter,
@@ -59,6 +63,25 @@ export default function PullRequestBoard() {
   });
   // One bulk CI fetch — we index by PR id and let RunCard look up its rollup.
   const { ciRuns } = useDorothyCIRuns({ limit: PAGE_LIMIT * 4 });
+
+  // Dead-screen fix (#죽은화면) — webhook 없이 gh API에서 직접 PR을 끌어와 채운다.
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const res = await dorothyRunsClient.pr.syncFromGithub();
+      if (res.ok && res.data) {
+        setSyncMsg(`${res.data.owner}/${res.data.repo} — ${res.data.synced}건 동기화됨`);
+        void refresh();
+      } else {
+        setSyncMsg(res.error ?? '동기화 실패');
+      }
+    } catch (err) {
+      setSyncMsg(err instanceof Error ? err.message : '동기화 실패');
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const ciByPr = useMemo(() => {
     const map = new Map<string, CIRun[]>();
@@ -93,18 +116,31 @@ export default function PullRequestBoard() {
               <GitPullRequest className="w-5 h-5" /> 풀 리퀘스트
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              GitHub webhook로 미러된 읽기 전용 보기. {query.trim()
+              GitHub webhook 또는 직접 동기화로 미러된 PR 보기. {query.trim()
                 ? <span>{pullRequests.length}건 중 {filtered.length}건 일치</span>
                 : <span>{pullRequests.length}건</span>}
             </p>
           </div>
-          <button
-            onClick={() => { void refresh(); }}
-            className="inline-flex items-center gap-2 px-3 py-2 text-sm border border-border bg-card text-muted-foreground hover:text-foreground hover:bg-secondary"
-          >
-            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} /> 새로고침
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { void handleSync(); }}
+              disabled={syncing}
+              title="GitHub REST에서 PR을 직접 끌어와 채웁니다(webhook 불필요)."
+              className="inline-flex items-center gap-2 px-3 py-2 text-sm border border-border bg-card text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-50"
+            >
+              <GitPullRequest className={`w-4 h-4 ${syncing ? 'animate-pulse' : ''}`} /> {syncing ? '동기화 중…' : 'GitHub에서 동기화'}
+            </button>
+            <button
+              onClick={() => { void refresh(); }}
+              className="inline-flex items-center gap-2 px-3 py-2 text-sm border border-border bg-card text-muted-foreground hover:text-foreground hover:bg-secondary"
+            >
+              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} /> 새로고침
+            </button>
+          </div>
         </div>
+        {syncMsg && (
+          <p className="mt-2 text-xs text-muted-foreground">{syncMsg}</p>
+        )}
 
         {/* Filters */}
         <div className="relative max-w-md mb-2">
@@ -158,8 +194,8 @@ export default function PullRequestBoard() {
           </p>
           {pullRequests.length === 0 && (
             <p className="text-xs mt-1">
-              PR은 GitHub가 <code className="font-mono">/api/github/webhook</code>로 전송할 때 표시됩니다.
-              설정에서 <code className="font-mono">githubWebhookSecret</code>을 구성하면 활성화됩니다.
+              <span className="font-medium text-foreground">GitHub에서 동기화</span> 버튼으로 webhook 없이 바로 채울 수 있습니다(설정의 토큰·기본 repo 사용).
+              <br />또는 GitHub가 <code className="font-mono">/api/github/webhook</code>로 전송하면 자동 표시됩니다.
             </p>
           )}
         </div>

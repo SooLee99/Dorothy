@@ -238,6 +238,8 @@ interface DorothyRunsBridge {
     }) => Promise<DorothyIpcResult<{ pullRequests: PullRequest[] }>>;
     get: (id: string) => Promise<DorothyIpcResult<{ pullRequest: PullRequest }>>;
     listByRun: (runId: string) => Promise<DorothyIpcResult<{ pullRequests: PullRequest[] }>>;
+    syncFromGithub: (params?: { owner?: string; repo?: string; limit?: number }) =>
+      Promise<DorothyIpcResult<{ synced: number; owner: string; repo: string }>>;
   };
   ci: {
     list: (options?: {
@@ -619,6 +621,14 @@ export const dorothyRunsClient = {
       try { return await b.pr.listByRun(runId); }
       catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : 'listByRun failed' } as DorothyIpcResult<{ pullRequests: PullRequest[] }>;
+      }
+    },
+    syncFromGithub: async (params?: { owner?: string; repo?: string; limit?: number }) => {
+      const b = bridge();
+      if (!b) return unavailable<{ synced: number; owner: string; repo: string }>();
+      try { return await b.pr.syncFromGithub(params); }
+      catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'sync failed' } as DorothyIpcResult<{ synced: number; owner: string; repo: string }>;
       }
     },
   },

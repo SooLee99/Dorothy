@@ -831,6 +831,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       }) => ipcRenderer.invoke('dorothy:pr:list', options ?? {}),
       get: (id: string) => ipcRenderer.invoke('dorothy:pr:get', id),
       listByRun: (runId: string) => ipcRenderer.invoke('dorothy:pr:listByRun', runId),
+      // Dead-screen fix (#죽은화면) — gh 폴링(B안) PR 동기화.
+      syncFromGithub: (params?: { owner?: string; repo?: string; limit?: number }) =>
+        ipcRenderer.invoke('dorothy:pr:syncFromGithub', params ?? {}),
     },
     ci: {
       list: (options?: {
