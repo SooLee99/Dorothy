@@ -3,6 +3,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard,
+  Activity,
   FolderKanban,
   Sparkles,
   Puzzle,
@@ -60,6 +61,7 @@ const navItems: NavEntry[] = [
   { href: '/projects', icon: FolderKanban, label: '프로젝트', shortcut: '5' },
   { href: '/kanban', icon: Columns, label: '칸반', shortcut: '3' },
   { href: '/sessions', icon: TerminalSquare, label: '에이전트 터미널' },
+  { href: '/monitoring', icon: Activity, label: '모니터링' },
   { href: '/app-factory', icon: Factory, label: '앱 팩토리' },
 
   { section: '에이전트·협업' },
