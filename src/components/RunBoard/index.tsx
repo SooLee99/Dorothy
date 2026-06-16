@@ -115,7 +115,18 @@ export default function RunBoard() {
       <div className="mb-6">
         <div className="flex items-center justify-between gap-4 mb-3">
           <div>
-            <h1 className="text-2xl font-semibold text-foreground">자동개발 실행 기록</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-semibold text-foreground">자동개발 실행 기록</h1>
+              {/* Dead-screen 처리 (#죽은화면) — Run 미러 미연결이라 화면이 비어 보일 수
+                  있음을 명확히 알리는 "준비 중" 배지. 실연결(PTY↔DB 미러)은 심장수술
+                  영역으로 별도. 아래 안내 배너와 한 쌍으로 동작. */}
+              <span
+                title="Run 미러(PTY↔DB) 연결 전이라 비어 보일 수 있습니다. 실제 실행은 /sessions에서 확인하세요."
+                className="px-2 py-0.5 text-[11px] font-medium border border-amber-500/40 bg-amber-500/10 text-amber-500 rounded"
+              >
+                준비 중
+              </span>
+            </div>
             <p className="text-sm text-muted-foreground mt-1">
               현재 실제 실행 상태는 <Link href="/sessions" className="text-primary underline">에이전트 터미널</Link>에서 확인하세요.
               이 화면은 실행 기록(Run mirror)이 연결되면 자동으로 채워집니다.
