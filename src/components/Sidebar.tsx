@@ -54,6 +54,7 @@ type NavEntry =
   | { href: string; icon: NavIcon; label: string; shortcut?: string };
 
 const navItems: NavEntry[] = [
+  // #3 메뉴 재분리: 과적된 '고급/진단'(12)을 분할 — 4그룹 → 6그룹(경로 삭제 0·라벨/href/단축키/아이콘 그대로, 그룹 소속만 변경).
   { section: '자동개발' },
   { href: '/', icon: LayoutDashboard, label: '대시보드', shortcut: '1' },
   { href: '/projects', icon: FolderKanban, label: '프로젝트', shortcut: '5' },
@@ -61,15 +62,19 @@ const navItems: NavEntry[] = [
   { href: '/sessions', icon: TerminalSquare, label: '에이전트 터미널' },
   { href: '/app-factory', icon: Factory, label: '앱 팩토리' },
 
-  // #3 메뉴 재분리: 과적된 '운영'(12)을 '작업·협업'+'연동·자동화'로 분할(경로 삭제 0·라벨/그룹만).
-  { section: '작업·협업' },
+  { section: '에이전트·협업' },
   { href: '/agents', icon: Bot, label: '에이전트', shortcut: '2' },
   { href: '/agent-activity', icon: Users, label: '에이전트 작업' },
   { href: '/agent-workflows', icon: Workflow, label: '에이전트 워크플로우' },
+  { href: '/companies', icon: Building2, label: '회사' },
+  { href: '/approvals', icon: ShieldCheck, label: '승인 대기' },
+
+  // ③ 산출물(모니터링) — 2번(모니터링 분리)의 토대.
+  { section: '산출물' },
   { href: '/reports', icon: FileText, label: '리포트' },
   { href: '/pr', icon: GitPullRequest, label: '풀 리퀘스트' },
-  { href: '/approvals', icon: ShieldCheck, label: '승인 대기' },
-  { href: '/companies', icon: Building2, label: '회사' },
+  { href: '/runs', icon: PlayCircle, label: '실행 기록' },
+  { href: '/test-results', icon: FlaskConical, label: 'E2E 테스트' },
 
   { section: '연동·자동화' },
   { href: '/automations', icon: Zap, label: '자동화', shortcut: '9' },
@@ -78,18 +83,18 @@ const navItems: NavEntry[] = [
   { href: '/templates', icon: Sparkles, label: '템플릿', shortcut: 'T' },
   { href: '/integrations/github', icon: Plug, label: '연동 설정' },
 
-  { section: '고급 / 진단' },
-  { href: '/runs', icon: PlayCircle, label: '실행 기록' },
-  { href: '/test-results', icon: FlaskConical, label: 'E2E 테스트' },
+  { section: '진단·개선' },
   { href: '/diagnostics', icon: Stethoscope, label: '진단' },
   { href: '/improvements', icon: Lightbulb, label: '개선' },
   { href: '/skill-candidates', icon: Layers, label: '스킬 후보' },
+  { href: '/usage', icon: BarChart2, label: '사용량', shortcut: '0' },
   { href: '/harness', icon: Network, label: '하네스' },
+
+  { section: '지식·확장' },
   { href: '/vault', icon: Archive, label: '볼트', shortcut: '4' },
   { href: '/memory', icon: Brain, label: '메모리', shortcut: 'M' },
   { href: '/skills', icon: Sparkles, label: '스킬', shortcut: '6' },
   { href: '/plugins', icon: Puzzle, label: '플러그인', shortcut: '7' },
-  { href: '/usage', icon: BarChart2, label: '사용량', shortcut: '0' },
   { href: '/pallet-town', icon: PalletTownIcon, label: '클로드몬' },
 ];
 
