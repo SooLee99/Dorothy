@@ -194,6 +194,21 @@ export function createImprovementSignal(input: CreateImprovementSignalInput): Im
       status: 'open',
     },
   });
+  // Dead-screen fix (#죽은화면) — /skill-candidates 자동 적재.
+  // 신규 ImprovementSignal 생성 시 기존 변환 함수를 best-effort로 호출해
+  // skill_candidate 한 건을 만든다(중복은 fingerprint dedup으로 흡수).
+  // 순환 의존(skill-candidate-service → improvement-signal-service)을 피하려
+  // 호출 시점 lazy require 사용. 실패해도 신호 생성은 막지 않는다.
+  try {
+    const { convertImprovementSignalToSkillCandidate } =
+      require('./skill-candidate-service') as typeof import('./skill-candidate-service');
+    convertImprovementSignalToSkillCandidate(id);
+  } catch (err) {
+    console.warn(
+      '[improvement-signal] auto skill-candidate suppressed:',
+      err instanceof Error ? err.message : 'unknown',
+    );
+  }
   return getImprovementSignal(id);
 }
 
