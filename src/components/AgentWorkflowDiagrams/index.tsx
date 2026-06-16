@@ -13,8 +13,9 @@
 import { useMemo } from 'react';
 import Link from 'next/link';
 import { Workflow, ArrowDown, ChevronRight } from 'lucide-react';
-import { useDorothyAgentDefinitions } from '@/hooks/useDorothyRuns';
-import type { AgentDefinition } from '@/types/dorothy';
+import { useDorothyAgentDefinitions, useDorothyWorkflowProgress } from '@/hooks/useDorothyRuns';
+import type { AgentDefinition, AgentWorkflowProgress, AgentWorkflowProgressStatus } from '@/types/dorothy';
+import { WORKFLOW_STATUS_BADGE } from '@/types/dorothy';
 import { processDisplayName, lookupProcessDisplay } from '@/lib/agentProcessDisplay';
 import {
   getGlobalDiagram,
@@ -47,7 +48,30 @@ const STATUS_BADGE: Record<NodeStatus, { label: string; cls: string }> = {
   none:            { label: '',               cls: '' },
 };
 
-function NodeCard({ node, def }: { node: AgentProcessNode; def?: AgentDefinition }) {
+// Dead-screen fix (#죽은화면) — /agent-workflows 하단을 반쪽→완전 라이브로.
+// 정적 다이어그램 구조(processDefinitions)는 그대로 두고, 노드의 agentId에
+// 해당하는 라이브 워크플로 진행 상태만 오버레이한다.
+const LIVE_STATUS_KO: Record<AgentWorkflowProgressStatus, string> = {
+  not_started: '대기',
+  in_progress: '진행 중',
+  blocked:     '막힘',
+  failed:      '실패',
+  completed:   '완료',
+  stalled:     '정체',
+};
+
+// 같은 agentId에 여러 진행 행이 있을 때 가장 의미있는 상태를 고른다
+// (활성 상태 우선, 동률이면 최근 갱신 우선).
+const LIVE_STATUS_RANK: Record<AgentWorkflowProgressStatus, number> = {
+  in_progress: 5,
+  blocked: 4,
+  failed: 3,
+  stalled: 2,
+  completed: 1,
+  not_started: 0,
+};
+
+function NodeCard({ node, def, progress }: { node: AgentProcessNode; def?: AgentDefinition; progress?: AgentWorkflowProgress }) {
   const status = node.agentId ? statusFor(def) : 'none';
   const badge = STATUS_BADGE[status];
   const inner = (
@@ -65,6 +89,19 @@ function NodeCard({ node, def }: { node: AgentProcessNode; def?: AgentDefinition
           )}
         </div>
       )}
+      {progress && (
+        <div className="flex items-center gap-1 mt-1">
+          <span className={`px-1.5 py-px text-[9px] border rounded shrink-0 ${WORKFLOW_STATUS_BADGE[progress.status]}`}>
+            {LIVE_STATUS_KO[progress.status]}
+            {typeof progress.progressPercent === 'number' && progress.status === 'in_progress'
+              ? ` ${progress.progressPercent}%`
+              : ''}
+          </span>
+          {progress.currentStepLabel && (
+            <span className="text-[10px] text-muted-foreground truncate">{progress.currentStepLabel}</span>
+          )}
+        </div>
+      )}
       {node.description && (
         <p className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{node.description}</p>
       )}
@@ -79,7 +116,7 @@ function NodeCard({ node, def }: { node: AgentProcessNode; def?: AgentDefinition
   ) : inner;
 }
 
-function DiagramPanel({ diagram, defByKey }: { diagram: AgentProcessDiagram; defByKey: Map<string, AgentDefinition> }) {
+function DiagramPanel({ diagram, defByKey, progressByKey }: { diagram: AgentProcessDiagram; defByKey: Map<string, AgentDefinition>; progressByKey: Map<string, AgentWorkflowProgress> }) {
   // Render as a vertical flow with fan-out edges listed beneath. We keep it
   // simple + dependency-free: nodes in order, arrow between consecutive, plus
   // an explicit edge list for non-linear connections.
@@ -115,7 +152,11 @@ function DiagramPanel({ diagram, defByKey }: { diagram: AgentProcessDiagram; def
       <div className="flex flex-col items-start gap-1">
         {diagram.nodes.map((node, i) => (
           <div key={node.id} className="flex flex-col items-start gap-1">
-            <NodeCard node={node} def={node.agentId ? defByKey.get(normKey(node.agentId)) : undefined} />
+            <NodeCard
+              node={node}
+              def={node.agentId ? defByKey.get(normKey(node.agentId)) : undefined}
+              progress={node.agentId ? progressByKey.get(normKey(node.agentId)) : undefined}
+            />
             {i < diagram.nodes.length - 1 && (
               <ArrowDown className="w-3.5 h-3.5 text-muted-foreground/60 ml-6" />
             )}
@@ -143,11 +184,29 @@ function DiagramPanel({ diagram, defByKey }: { diagram: AgentProcessDiagram; def
 
 export default function AgentWorkflowDiagrams() {
   const { definitions, dbUnavailable } = useDorothyAgentDefinitions();
+  // Dead-screen fix (#죽은화면) — 하단 다이어그램 라이브 진행 오버레이.
+  const { rows: progressRows } = useDorothyWorkflowProgress({ limit: 500 });
   const defByKey = useMemo(() => {
     const m = new Map<string, AgentDefinition>();
     for (const d of definitions) m.set(normKey(d.id), d);
     return m;
   }, [definitions]);
+
+  // agentId(정규화) → 가장 의미있는 라이브 진행 행.
+  const progressByKey = useMemo(() => {
+    const m = new Map<string, AgentWorkflowProgress>();
+    for (const p of progressRows) {
+      const k = normKey(p.agentId);
+      if (!k) continue;
+      const cur = m.get(k);
+      if (!cur) { m.set(k, p); continue; }
+      const better =
+        LIVE_STATUS_RANK[p.status] - LIVE_STATUS_RANK[cur.status] ||
+        (p.updatedAt ?? '').localeCompare(cur.updatedAt ?? '');
+      if (better > 0) m.set(k, p);
+    }
+    return m;
+  }, [progressRows]);
 
   const global = getGlobalDiagram();
   const agentDiagrams = getAgentDiagrams();
@@ -159,7 +218,7 @@ export default function AgentWorkflowDiagrams() {
           <Workflow className="w-6 h-6" /> 에이전트 워크플로
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          전체 개발 프로세스와 각 에이전트의 개별 워크플로입니다. 상태 배지는 라이브 에이전트 등록 정보에서 가져옵니다.
+          전체 개발 프로세스와 각 에이전트의 개별 워크플로입니다. 상태 배지는 라이브 에이전트 등록 정보에서, 진행 배지(진행 중·막힘·완료)는 라이브 워크플로 진행에서 가져옵니다.
         </p>
       </div>
 
@@ -167,13 +226,13 @@ export default function AgentWorkflowDiagrams() {
         <p className="text-[11px] text-yellow-500">dorothy.db 사용 불가 — 상태 배지는 파일/등록 스캔으로 대체됩니다.</p>
       )}
 
-      <DiagramPanel diagram={global} defByKey={defByKey} />
+      <DiagramPanel diagram={global} defByKey={defByKey} progressByKey={progressByKey} />
 
       <div>
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">에이전트별 프로세스</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {agentDiagrams.map(d => (
-            <DiagramPanel key={d.id} diagram={d} defByKey={defByKey} />
+            <DiagramPanel key={d.id} diagram={d} defByKey={defByKey} progressByKey={progressByKey} />
           ))}
         </div>
       </div>
