@@ -486,8 +486,23 @@ function AgentListItem({
 }
 
 // Main component
-export default function AgentWorld() {
-  const { agents, startAgent, stopAgent, refresh } = useElectronAgents();
+interface AgentWorldProps {
+  // 회사별 보기 컨텍스트 (Dashboard 전달). 없으면 전체.
+  companyView?: string;
+  agentCompanyMap?: Record<string, string | null>;
+}
+
+export default function AgentWorld({
+  companyView = '__all__',
+  agentCompanyMap = {},
+}: AgentWorldProps = {}) {
+  const { agents: agentsAll, startAgent, stopAgent, refresh } = useElectronAgents();
+  // 회사별 보기: 선택 회사의 에이전트만. agents.json 미변경.
+  const agents = useMemo(() => {
+    if (!companyView || companyView === '__all__') return agentsAll;
+    if (companyView === '__unmapped__') return agentsAll.filter((a) => !(a.id in agentCompanyMap));
+    return agentsAll.filter((a) => agentCompanyMap[a.id] === companyView);
+  }, [agentsAll, companyView, agentCompanyMap]);
   const { projects, openFolderDialog } = useElectronFS();
   const [selectedAgent, setSelectedAgent] = useState<AgentStatus | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);

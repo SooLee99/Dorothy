@@ -13,9 +13,9 @@ export default function VaultPage() {
       {/* Header — same layout as AgentListHeader */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 lg:mb-6">
         <div>
-          <h1 className="text-xl lg:text-2xl font-bold tracking-tight text-foreground">Vault</h1>
+          <h1 className="text-xl lg:text-2xl font-bold tracking-tight text-foreground">볼트</h1>
           <p className="text-muted-foreground text-xs lg:text-sm mt-1 hidden sm:block">
-            Agent reports, knowledge base & notes
+            에이전트 보고서·지식 베이스·노트
           </p>
         </div>
       </div>

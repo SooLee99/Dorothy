@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useElectronAgents, useElectronFS, useElectronSkills, isElectron } from '@/hooks/useElectron';
@@ -27,12 +27,27 @@ import {
   EmptyState,
 } from './components';
 
-export default function CanvasView() {
+interface CanvasViewProps {
+  // 회사별 보기 컨텍스트 (Dashboard 전달). 없으면 전체.
+  companyView?: string;
+  agentCompanyMap?: Record<string, string | null>;
+}
+
+export default function CanvasView({
+  companyView = '__all__',
+  agentCompanyMap = {},
+}: CanvasViewProps = {}) {
   const router = useRouter();
   const canvasRef = useRef<HTMLDivElement>(null);
 
   // External hooks
-  const { agents: electronAgents, stopAgent, startAgent, createAgent, refresh: refreshAgents } = useElectronAgents();
+  const { agents: electronAgentsAll, stopAgent, startAgent, createAgent, refresh: refreshAgents } = useElectronAgents();
+  // 회사별 보기: 선택 회사의 에이전트만. agents.json 미변경.
+  const electronAgents = useMemo(() => {
+    if (!companyView || companyView === '__all__') return electronAgentsAll;
+    if (companyView === '__unmapped__') return electronAgentsAll.filter((a) => !(a.id in agentCompanyMap));
+    return electronAgentsAll.filter((a) => agentCompanyMap[a.id] === companyView);
+  }, [electronAgentsAll, companyView, agentCompanyMap]);
   const { projects, openFolderDialog } = useElectronFS();
   const { installedSkills, refresh: refreshSkills } = useElectronSkills();
   const { data: claudeData } = useClaude();

@@ -51,7 +51,7 @@ export function TemplateFormDialog({ initialTemplate, installedSkills, onClose, 
 
   async function handleSubmit() {
     if (!displayName.trim()) {
-      setError('Name is required');
+      setError('이름은 필수입니다');
       return;
     }
     setError(null);
@@ -69,12 +69,12 @@ export function TemplateFormDialog({ initialTemplate, installedSkills, onClose, 
         savedPrompt: savedPrompt.trim() || undefined,
       });
       if (!result.success) {
-        setError(result.error ?? 'Failed to save template');
+        setError(result.error ?? '템플릿 저장에 실패했습니다');
         return;
       }
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save template');
+      setError(err instanceof Error ? err.message : '템플릿 저장에 실패했습니다');
     } finally {
       setSubmitting(false);
     }
@@ -87,9 +87,9 @@ export function TemplateFormDialog({ initialTemplate, installedSkills, onClose, 
       <div ref={dialogRef} className="bg-card border border-border w-full max-w-2xl max-h-[90vh] flex flex-col">
         <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-3">
           <h2 className="font-semibold text-foreground">
-            {initialTemplate ? 'Edit template' : 'New template'}
+            {initialTemplate ? '템플릿 편집' : '새 템플릿'}
           </h2>
-          <button onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground" title="Close">
+          <button onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground" title="닫기">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -97,7 +97,7 @@ export function TemplateFormDialog({ initialTemplate, installedSkills, onClose, 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           <div className="grid grid-cols-[80px_1fr] gap-3">
             <div>
-              <label className="block text-xs font-medium text-foreground mb-1.5">Icon</label>
+              <label className="block text-xs font-medium text-foreground mb-1.5">아이콘</label>
               <input
                 type="text"
                 value={icon}
@@ -107,33 +107,33 @@ export function TemplateFormDialog({ initialTemplate, installedSkills, onClose, 
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-foreground mb-1.5">Name</label>
+              <label className="block text-xs font-medium text-foreground mb-1.5">이름</label>
               <input
                 type="text"
                 value={displayName}
                 onChange={e => setDisplayName(e.target.value)}
                 maxLength={40}
-                placeholder="e.g. Mobile App Engineer"
+                placeholder="예: 모바일 앱 엔지니어"
                 className="w-full px-2 py-1.5 bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/40"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-foreground mb-1.5">Short description</label>
+            <label className="block text-xs font-medium text-foreground mb-1.5">간단한 설명</label>
             <input
               type="text"
               value={description}
               onChange={e => setDescription(e.target.value)}
               maxLength={120}
-              placeholder="What does this agent do? (one sentence)"
+              placeholder="이 에이전트는 무슨 일을 하나요? (한 문장)"
               className="w-full px-2 py-1.5 bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/40"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-foreground mb-1.5">Character</label>
+              <label className="block text-xs font-medium text-foreground mb-1.5">캐릭터</label>
               <select
                 value={character}
                 onChange={e => setCharacter(e.target.value as AgentCharacter)}
@@ -143,7 +143,7 @@ export function TemplateFormDialog({ initialTemplate, installedSkills, onClose, 
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-foreground mb-1.5">Provider</label>
+              <label className="block text-xs font-medium text-foreground mb-1.5">프로바이더</label>
               <select
                 value={provider}
                 onChange={e => setProvider(e.target.value as AgentProvider)}
@@ -155,7 +155,7 @@ export function TemplateFormDialog({ initialTemplate, installedSkills, onClose, 
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-foreground mb-1.5">How careful?</label>
+            <label className="block text-xs font-medium text-foreground mb-1.5">얼마나 신중하게?</label>
             <div className="flex gap-2">
               {(['normal', 'auto', 'bypass'] as const).map(m => (
                 <button
@@ -167,9 +167,9 @@ export function TemplateFormDialog({ initialTemplate, installedSkills, onClose, 
                       : 'bg-secondary border-border text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  {m === 'normal' && 'Ask each time'}
-                  {m === 'auto' && 'Run freely'}
-                  {m === 'bypass' && 'Skip all checks'}
+                  {m === 'normal' && '매번 확인'}
+                  {m === 'auto' && '자유롭게 실행'}
+                  {m === 'bypass' && '모든 확인 건너뛰기'}
                 </button>
               ))}
             </div>
@@ -177,10 +177,10 @@ export function TemplateFormDialog({ initialTemplate, installedSkills, onClose, 
 
           <div>
             <label className="block text-xs font-medium text-foreground mb-1.5">
-              Skills <span className="text-muted-foreground font-normal">({skills.length} selected)</span>
+              스킬 <span className="text-muted-foreground font-normal">({skills.length}개 선택됨)</span>
             </label>
             {allSkills.length === 0 ? (
-              <p className="text-xs text-muted-foreground italic">No skills installed yet — visit the Skills page to install some.</p>
+              <p className="text-xs text-muted-foreground italic">아직 설치된 스킬이 없습니다 — 스킬 페이지에서 설치하세요.</p>
             ) : (
               <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto p-2 border border-border bg-secondary/30">
                 {allSkills.map(skill => {
@@ -197,7 +197,7 @@ export function TemplateFormDialog({ initialTemplate, installedSkills, onClose, 
                             ? 'bg-secondary border-border text-muted-foreground hover:text-foreground'
                             : 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400'
                       }`}
-                      title={installed ? '' : 'Skill not installed'}
+                      title={installed ? '' : '설치되지 않은 스킬'}
                     >
                       {skill}
                     </button>
@@ -208,12 +208,12 @@ export function TemplateFormDialog({ initialTemplate, installedSkills, onClose, 
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-foreground mb-1.5">System prompt (optional)</label>
+            <label className="block text-xs font-medium text-foreground mb-1.5">시스템 프롬프트 (선택)</label>
             <textarea
               value={savedPrompt}
               onChange={e => setSavedPrompt(e.target.value)}
               rows={4}
-              placeholder="Tell the agent how to behave. e.g. 'You are a senior frontend engineer…'"
+              placeholder="에이전트가 어떻게 동작해야 하는지 적어 주세요. 예: '당신은 시니어 프론트엔드 엔지니어입니다…'"
               className="w-full px-2 py-1.5 bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/40 resize-y"
             />
           </div>
@@ -229,7 +229,7 @@ export function TemplateFormDialog({ initialTemplate, installedSkills, onClose, 
             className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
             disabled={submitting}
           >
-            Cancel
+            취소
           </button>
           <button
             onClick={handleSubmit}
@@ -237,7 +237,7 @@ export function TemplateFormDialog({ initialTemplate, installedSkills, onClose, 
             className="px-3 py-1.5 text-xs bg-foreground text-background font-medium hover:bg-foreground/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
           >
             {submitting && <Loader2 className="w-3 h-3 animate-spin" />}
-            {initialTemplate ? 'Save changes' : 'Create template'}
+            {initialTemplate ? '변경 사항 저장' : '템플릿 만들기'}
           </button>
         </div>
       </div>

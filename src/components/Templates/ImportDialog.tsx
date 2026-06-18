@@ -49,19 +49,19 @@ export function ImportDialog({ onClose, onImport }: ImportDialogProps) {
     try {
       const json = JSON.parse(value);
       if (!json || typeof json !== 'object') {
-        setParseError('JSON must be an object');
+        setParseError('JSON은 객체여야 합니다');
         setParsed(null);
         setPreview(null);
         return;
       }
       if (json.kind !== 'dorothy.agent-template') {
-        setParseError('Not a Dorothy template file (missing kind: "dorothy.agent-template")');
+        setParseError('Dorothy 템플릿 파일이 아닙니다 (kind: "dorothy.agent-template" 누락)');
         setParsed(null);
         setPreview(null);
         return;
       }
       if (!Array.isArray(json.templates)) {
-        setParseError('Missing or invalid "templates" array');
+        setParseError('"templates" 배열이 없거나 올바르지 않습니다');
         setParsed(null);
         setPreview(null);
         return;
@@ -75,7 +75,7 @@ export function ImportDialog({ onClose, onImport }: ImportDialogProps) {
       setParsed(json);
       setPreview({ count: names.length, names });
     } catch (err) {
-      setParseError(err instanceof Error ? err.message : 'Invalid JSON');
+      setParseError(err instanceof Error ? err.message : '올바르지 않은 JSON');
       setParsed(null);
       setPreview(null);
     }
@@ -93,12 +93,12 @@ export function ImportDialog({ onClose, onImport }: ImportDialogProps) {
     try {
       const result = await onImport(parsed);
       if (!result.success) {
-        setSubmitError(result.error ?? 'Import failed');
+        setSubmitError(result.error ?? '가져오기에 실패했습니다');
         return;
       }
       onClose();
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Import failed');
+      setSubmitError(err instanceof Error ? err.message : '가져오기에 실패했습니다');
     } finally {
       setSubmitting(false);
     }
@@ -108,15 +108,15 @@ export function ImportDialog({ onClose, onImport }: ImportDialogProps) {
     <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div ref={dialogRef} className="bg-card border border-border w-full max-w-xl max-h-[90vh] flex flex-col">
         <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-3">
-          <h2 className="font-semibold text-foreground">Import templates</h2>
-          <button onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground" title="Close">
+          <h2 className="font-semibold text-foreground">템플릿 가져오기</h2>
+          <button onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground" title="닫기">
             <X className="w-4 h-4" />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
           <p className="text-xs text-muted-foreground">
-            Paste a Dorothy template JSON below or upload a <code className="text-foreground bg-secondary px-1">.json</code> file. Imported templates land under <strong>Your templates</strong>.
+            아래에 Dorothy 템플릿 JSON을 붙여넣거나 <code className="text-foreground bg-secondary px-1">.json</code> 파일을 업로드하세요. 가져온 템플릿은 <strong>내 템플릿</strong>에 추가됩니다.
           </p>
 
           <div className="flex items-center gap-2">
@@ -125,7 +125,7 @@ export function ImportDialog({ onClose, onImport }: ImportDialogProps) {
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs bg-secondary border border-border hover:bg-accent/50 transition-colors"
             >
               <Upload className="w-3 h-3" />
-              Upload file
+              파일 업로드
             </button>
             <input
               ref={fileInputRef}
@@ -156,11 +156,11 @@ export function ImportDialog({ onClose, onImport }: ImportDialogProps) {
             <div className="border border-border bg-secondary/30 px-3 py-2">
               <p className="text-xs font-medium text-foreground mb-1.5 flex items-center gap-1.5">
                 <FileText className="w-3 h-3" />
-                {preview.count} template{preview.count === 1 ? '' : 's'} ready to import
+                가져올 준비가 된 템플릿 {preview.count}개
               </p>
               <ul className="text-xs text-muted-foreground list-disc pl-5 space-y-0.5">
                 {preview.names.slice(0, 8).map((n, i) => <li key={`${n}-${i}`}>{n}</li>)}
-                {preview.names.length > 8 && <li>…and {preview.names.length - 8} more</li>}
+                {preview.names.length > 8 && <li>…외 {preview.names.length - 8}개 더</li>}
               </ul>
             </div>
           )}
@@ -176,7 +176,7 @@ export function ImportDialog({ onClose, onImport }: ImportDialogProps) {
             className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
             disabled={submitting}
           >
-            Cancel
+            취소
           </button>
           <button
             onClick={handleSubmit}
@@ -184,7 +184,7 @@ export function ImportDialog({ onClose, onImport }: ImportDialogProps) {
             className="px-3 py-1.5 text-xs bg-foreground text-background font-medium hover:bg-foreground/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
           >
             {submitting && <Loader2 className="w-3 h-3 animate-spin" />}
-            Import
+            가져오기
           </button>
         </div>
       </div>

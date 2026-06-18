@@ -14,13 +14,15 @@ import {
   Gauge,
 } from 'lucide-react';
 import type { AgentStatus } from '@/types/electron';
-import { CHARACTER_FACES, STATUS_COLORS } from '../constants';
+import { CHARACTER_FACES, STATUS_COLORS, PROVIDER_BADGE } from '../constants';
 
 interface TerminalPanelHeaderProps {
   agent: AgentStatus;
   isFullscreen: boolean;
   isBroadcasting: boolean;
   tabType: 'custom' | 'project';
+  agentOptions?: AgentStatus[];
+  onChangeAgent?: (newAgentId: string) => void;
   onStart: () => void;
   onStop: () => void;
   onFullscreen: () => void;
@@ -35,6 +37,8 @@ export default function TerminalPanelHeader({
   isFullscreen,
   isBroadcasting,
   tabType,
+  agentOptions,
+  onChangeAgent,
   onStart,
   onStop,
   onFullscreen,
@@ -49,6 +53,8 @@ export default function TerminalPanelHeader({
   const name = agent.name || `Agent ${agent.id.slice(0, 6)}`;
   const projectName = agent.projectPath.split('/').pop() || '';
   const status = STATUS_COLORS[agent.status] || STATUS_COLORS.idle;
+  const engine = PROVIDER_BADGE[agent.provider || ''] || PROVIDER_BADGE.default;
+  const engineTitle = `엔진: ${agent.provider || 'unknown'}${agent.model ? ` · 모델: ${agent.model}` : ''}`;
 
   const showDragHandle = tabType === 'custom';
   const showRemoveButton = tabType === 'custom';
@@ -63,9 +69,34 @@ export default function TerminalPanelHeader({
         <GripVertical className="w-3 h-3 text-muted-foreground/50 flex-shrink-0" />
       )}
 
-      {/* Agent identity */}
+      {/* Agent identity — selectable on custom tabs so the user can swap which agent runs here */}
       <span className="text-base">{emoji}</span>
-      <span className="text-xs font-medium text-foreground truncate max-w-[120px]">{name}</span>
+      {onChangeAgent && agentOptions && agentOptions.length > 1 ? (
+        <select
+          value={agent.id}
+          onChange={(e) => onChangeAgent(e.target.value)}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          title="이 터미널의 에이전트 변경"
+          className="text-xs font-medium text-foreground bg-secondary border border-border rounded px-1 py-0.5 max-w-[140px] cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary/40"
+        >
+          {agentOptions.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name || `Agent ${a.id.slice(0, 6)}`}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <span className="text-xs font-medium text-foreground truncate max-w-[120px]">{name}</span>
+      )}
+
+      {/* Engine/provider badge — which agent/engine this terminal runs */}
+      <span
+        className={`text-[10px] px-1.5 py-0.5 font-medium ${engine.bg} ${engine.text} whitespace-nowrap`}
+        title={engineTitle}
+      >
+        {engine.label}{agent.model ? ` · ${agent.model}` : ''}
+      </span>
 
       {/* Status badge */}
       <span className={`text-[10px] px-1.5 py-0.5 font-medium ${status.bg} ${status.text}`}>

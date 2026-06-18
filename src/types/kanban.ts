@@ -32,6 +32,23 @@ export interface KanbanTask {
   labels: string[];
   completionSummary?: string;    // Summary of what was done by the agent
   attachments: TaskAttachment[]; // Files attached to the task
+  // Phase 6-AT2 — 실제 단계 이동 이력(담당/컬럼 변화 시 PM-tick 이 적재). 추정 아님.
+  stageHistory?: StageEntry[];
+  // Phase 6-BJ — 워크플로우 체크리스트(자동 작성 + 수동 편집). auto 항목은 단계/상태에서 done 파생.
+  checklist?: ChecklistItem[];
+}
+
+export interface StageEntry {
+  at: string;                    // ISO 기록 시각
+  agentId: string | null;        // 그 시점 담당(=단계)
+  column: string;                // 그 시점 컬럼
+}
+
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  done: boolean;
+  auto?: boolean;                // true = 워크플로우에서 자동 파생(사용자 체크와 구분)
 }
 
 export interface KanbanTaskCreate {

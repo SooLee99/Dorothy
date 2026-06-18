@@ -19,9 +19,9 @@ export function AgentListHeader({
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 lg:mb-6">
       <div>
-        <h1 className="text-xl lg:text-2xl font-bold tracking-tight text-foreground">AI Agents Control Center</h1>
+        <h1 className="text-xl lg:text-2xl font-bold tracking-tight text-foreground">AI 에이전트 관제 센터</h1>
         <p className="text-muted-foreground text-xs lg:text-sm mt-1 hidden sm:block">
-          Dorothy is watching you AI Agents.
+          Dorothy가 AI 에이전트를 지켜보고 있습니다.
         </p>
       </div>
       <div className="flex items-center gap-2">

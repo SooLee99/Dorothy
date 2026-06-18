@@ -1,0 +1,9 @@
+{
+  "//": "테스트 전용 타입체크. 메인 tsconfig 는 next build(프로덕션)용이라 __tests__ 를 제외하므로, 테스트 타입은 여기서 별도 검증한다(숨김 아닌 분리). 현재 기존 vitest mock 타입 부정확 다수 — 점진 수정 대상.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["__tests__/**/*.ts", "__tests__/**/*.tsx"],
+  "exclude": ["node_modules"]
+}

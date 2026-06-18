@@ -20,6 +20,10 @@ export function buildFullPath(extraPaths: string[] = []): string {
     '/usr/local/bin',
     '/opt/homebrew/bin',
     path.join(homeDir, '.local/bin'),
+    // Phase 6-K — common global-CLI install dirs (npm -g prefix, bun) where the
+    // `claude` binary frequently lives but launchd's minimal PATH omits.
+    path.join(homeDir, '.npm-global/bin'),
+    path.join(homeDir, '.bun/bin'),
   ];
 
   // Find any nvm node version directories

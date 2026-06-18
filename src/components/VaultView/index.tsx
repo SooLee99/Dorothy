@@ -337,9 +337,9 @@ export default function VaultView({ embedded }: { embedded?: boolean } = {}) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 shrink-0">
         {!embedded && (
           <div>
-            <h1 className="text-xl lg:text-2xl font-bold tracking-tight">Vault</h1>
+            <h1 className="text-xl lg:text-2xl font-bold tracking-tight">볼트</h1>
             <p className="text-muted-foreground text-xs lg:text-sm mt-1 hidden sm:block">
-              Agent reports & knowledge base
+              에이전트 보고서·지식 베이스
             </p>
           </div>
         )}

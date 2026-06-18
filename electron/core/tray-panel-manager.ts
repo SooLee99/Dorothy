@@ -35,7 +35,8 @@ export function createTrayPanel(): BrowserWindow {
 
   const isDev = process.env.NODE_ENV === 'development';
   if (isDev) {
-    trayPanel.loadURL('http://localhost:3000/tray-panel');
+    const port = process.env.PORT || '3000';
+    trayPanel.loadURL(`http://localhost:${port}/tray-panel`);
   } else {
     trayPanel.loadURL('app://-/tray-panel/index.html');
   }

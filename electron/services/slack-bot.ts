@@ -7,6 +7,7 @@ import { formatSlackAgentStatus, isSuperAgent, getSuperAgent, getSuperAgentInstr
 import { agents, saveAgents, initAgentPty } from '../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
 import { getMainWindow } from '../core/window-manager';
+import { handleTasksChannelMessage, createTaskDirect } from './slack-kanban';
 import { app } from 'electron';
 
 // Slack bot state
@@ -167,6 +168,17 @@ export function initSlackBot(
       slackResponseChannel = channel;
       // Use thread_ts if replying in a thread, otherwise use the message ts to start a thread
       slackResponseThreadTs = msg.thread_ts || msg.ts || null;
+
+      // ── 채널 라우팅(1-B/2-A): #-tasks 채널은 ★빠른 단발 LLM → 칸반 create 경로로 분리.
+      //   ★PTY 주입(writeProgrammaticInput)을 ★타지 않으므로 바쁜 Super Agent 와 무관 = 30분 지연 없음.
+      //   tasksChannelId 는 런타임 설정(app-settings.json)에서 읽는다(없으면 no-op로 기존 경로 유지).
+      const tasksChannelId = (appSettings as unknown as { tasksChannelId?: string }).tasksChannelId;
+      if (tasksChannelId && channel === tasksChannelId) {
+        await handleTasksChannelMessage(channel, msg.text, say, appSettings, task => {
+          mainWindow?.webContents.send('kanban:task-created', task);
+        });
+        return;
+      }
 
       // Save channel for responses
       if (appSettings.slackChannelId !== channel) {
@@ -414,6 +426,29 @@ export async function handleSlackCommand(
     return;
   }
 
+  // 슬랙에서 칸반 작업 추가: `task <설명>` 또는 `add <설명>`. (전용 채널 불요·@멘션으로 기존 채널서 동작·자유대화 무손상)
+  if (lowerText.startsWith('task ') || lowerText.startsWith('add ')) {
+    const prefixLen = lowerText.startsWith('task ') ? 5 : 4;
+    const title = text.slice(prefixLen).trim();
+    if (!title) {
+      await say(':x: 사용법: `task <작업 설명>` (또는 `add <설명>`). 예: `task bueongi 공유 화면 버그 수정`');
+      return;
+    }
+    // 프로젝트 추정: bueongi 키워드면 bueongi, 아니면 triplan 기본(대시보드에서 재배정 가능).
+    const isBueongi = /bueongi|부엉/i.test(title);
+    const proj = isBueongi
+      ? { id: 'bueongi', path: '/Users/soo/workspace/source-code/apps/bueongi/frontend-src' }
+      : { id: 'triplan', path: '/Users/soo/workspace/source-code/triplan' };
+    try {
+      const created = createTaskDirect({ title, description: '', projectId: proj.id, projectPath: proj.path });
+      mainWindow?.webContents.send('kanban:task-created', created);
+      await say(`:white_check_mark: 칸반 backlog 추가: *${created.title}* (project: ${proj.id})\n대시보드 /kanban 에서 확인·재배정·우선순위 조정 가능.`);
+    } catch (err) {
+      await say(`:x: 작업 추가 실패: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return;
+  }
+
   if (lowerText.startsWith('start ')) {
     const parts = text.slice(5).trim().split(' ');
     const agentName = parts[0].toLowerCase();
@@ -570,6 +605,13 @@ export async function sendToSuperAgentFromSlack(
 
       // Build command with instructions file
       let command = 'claude';
+
+      // Slack 양방향 응답이 메인 Opus 풀을 소모해 "HTTP 429: usage limit reached"가
+      // 반복되던 문제(2026-06-12) 완화: Super Agent의 Slack 세션을 더 저렴한 Claude
+      // 모델로 라우팅한다. codex(잔액0)/gemini provider 분리는 spawn 경로 대수술이라
+      // 보류하고 Claude 모델로 변경(사용자 지시). ENV로 조정/되돌림 가능(빈 값이면 기본 모델).
+      const slackModel = process.env.DOROTHY_SLACK_SUPER_AGENT_MODEL ?? 'sonnet';
+      if (slackModel) command += ` --model '${slackModel.replace(/'/g, "'\\''")}'`;
 
       const mcpConfigPath = path.join(app.getPath('home'), '.claude', 'mcp.json');
       if (fs.existsSync(mcpConfigPath)) {

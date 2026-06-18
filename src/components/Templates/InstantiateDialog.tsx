@@ -56,7 +56,7 @@ export function InstantiateDialog({ template, onClose, onCreated }: InstantiateD
 
   async function handleCreate() {
     if (!projectPath) {
-      setError('Please pick a project first.');
+      setError('먼저 프로젝트를 선택하세요.');
       return;
     }
     setError(null);
@@ -89,7 +89,7 @@ export function InstantiateDialog({ template, onClose, onCreated }: InstantiateD
       onClose();
     } catch (err) {
       console.error('Failed to create agent from template:', err);
-      setError(err instanceof Error ? err.message : 'Failed to create agent');
+      setError(err instanceof Error ? err.message : '에이전트 생성에 실패했습니다');
       setSubmitting(false);
     }
   }
@@ -101,18 +101,18 @@ export function InstantiateDialog({ template, onClose, onCreated }: InstantiateD
           <div className="flex items-center gap-3 min-w-0">
             <span className="text-2xl shrink-0">{template.icon}</span>
             <div className="min-w-0">
-              <h2 className="font-semibold text-foreground truncate">Use template: {template.displayName}</h2>
-              <p className="text-xs text-muted-foreground truncate">Pick a project, name your agent, and we&apos;ll set the rest up.</p>
+              <h2 className="font-semibold text-foreground truncate">템플릿 사용: {template.displayName}</h2>
+              <p className="text-xs text-muted-foreground truncate">프로젝트를 고르고 에이전트 이름만 정하면 나머지는 알아서 설정됩니다.</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground" title="Close">
+          <button onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground" title="닫기">
             <X className="w-4 h-4" />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           <div>
-            <label className="block text-xs font-medium text-foreground mb-1.5">Agent name</label>
+            <label className="block text-xs font-medium text-foreground mb-1.5">에이전트 이름</label>
             <input
               type="text"
               value={name}
@@ -125,13 +125,13 @@ export function InstantiateDialog({ template, onClose, onCreated }: InstantiateD
 
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-medium text-foreground">Project</label>
+              <label className="block text-xs font-medium text-foreground">프로젝트</label>
               <button
                 onClick={handlePickFolder}
                 className="text-xs text-primary hover:underline flex items-center gap-1"
               >
                 <FolderOpen className="w-3 h-3" />
-                Pick another folder…
+                다른 폴더 선택…
               </button>
             </div>
             <div className="relative mb-2">
@@ -140,13 +140,13 @@ export function InstantiateDialog({ template, onClose, onCreated }: InstantiateD
                 type="text"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="Search your projects…"
+                placeholder="프로젝트 검색…"
                 className="w-full pl-7 pr-2 py-1.5 bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/40"
               />
             </div>
             <div className="max-h-56 overflow-y-auto border border-border bg-secondary/30">
               {filteredProjects.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-4">No projects match. Use &ldquo;Pick another folder…&rdquo; above.</p>
+                <p className="text-xs text-muted-foreground text-center py-4">일치하는 프로젝트가 없습니다. 위의 &ldquo;다른 폴더 선택…&rdquo;을 사용하세요.</p>
               ) : (
                 filteredProjects.map(p => (
                   <button
@@ -163,7 +163,7 @@ export function InstantiateDialog({ template, onClose, onCreated }: InstantiateD
               )}
             </div>
             {projectPath && !filteredProjects.some(p => p.path === projectPath) && (
-              <p className="text-[11px] text-muted-foreground mt-1.5">Selected: <span className="text-foreground">{projectPath}</span></p>
+              <p className="text-[11px] text-muted-foreground mt-1.5">선택됨: <span className="text-foreground">{projectPath}</span></p>
             )}
           </div>
 
@@ -178,7 +178,7 @@ export function InstantiateDialog({ template, onClose, onCreated }: InstantiateD
             className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
             disabled={submitting}
           >
-            Cancel
+            취소
           </button>
           <button
             onClick={handleCreate}
@@ -186,7 +186,7 @@ export function InstantiateDialog({ template, onClose, onCreated }: InstantiateD
             className="px-3 py-1.5 text-xs bg-foreground text-background font-medium hover:bg-foreground/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
           >
             {submitting && <Loader2 className="w-3 h-3 animate-spin" />}
-            Create agent
+            에이전트 생성
           </button>
         </div>
       </div>

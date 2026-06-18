@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { execSync } from 'child_process';
 import type { AppSettings } from '../types';
+import { resolveLaunchModel } from '../core/provider-model-compatibility';
 import type {
   CLIProvider,
   InteractiveCommandParams,
@@ -34,18 +35,22 @@ export class CodexProvider implements CLIProvider {
   buildInteractiveCommand(params: InteractiveCommandParams): string {
     let command = `'${params.binaryPath.replace(/'/g, "'\\''")}'`;
 
-    // Model
-    if (params.model) {
-      if (!/^[a-zA-Z0-9._:/-]+$/.test(params.model)) {
+    // Model — Phase 6-L: omit a model that is incompatible with Codex (e.g. a
+    // Claude-family 'opus') so we never emit `--model opus` (which Codex
+    // rejects). resolveLaunchModel returns undefined for incompatible models,
+    // letting Codex fall back to its own default. The stored agents.json model
+    // is never rewritten here.
+    const launchModel = resolveLaunchModel('codex', params.model);
+    if (launchModel) {
+      if (!/^[a-zA-Z0-9._:/-]+$/.test(launchModel)) {
         throw new Error('Invalid model name');
       }
-      command += ` --model '${params.model}'`;
+      command += ` --model '${launchModel}'`;
     }
 
-    // Skip permissions (Codex uses --full-auto)
-    if (params.permissionMode === 'auto' || params.permissionMode === 'bypass') {
-      command += ' --full-auto';
-    }
+    // 정책: 대시보드에서 실행되는 모든 codex 에이전트는 항상 --dangerously-bypass-approvals-and-sandbox.
+    // 디렉토리 신뢰 프롬프트("Do you trust...")까지 우회. permissionMode 값 무시.
+    command += ' --dangerously-bypass-approvals-and-sandbox';
 
     // Secondary project
     if (params.secondaryProjectPath) {
@@ -81,9 +86,9 @@ export class CodexProvider implements CLIProvider {
   buildScheduledCommand(params: ScheduledCommandParams): string {
     let command = `"${params.binaryPath}"`;
 
-    if (params.autonomous) {
-      command += ' --full-auto';
-    }
+    // 정책: 항상 신뢰·승인·샌드박스 우회(자율).
+    command += ' --dangerously-bypass-approvals-and-sandbox';
+    void params.autonomous;
 
     if (params.outputFormat) {
       command += ' --json';
@@ -98,8 +103,10 @@ export class CodexProvider implements CLIProvider {
   buildOneShotCommand(params: OneShotCommandParams): string {
     let command = `'${params.binaryPath.replace(/'/g, "'\\''")}'`;
 
-    if (params.model) {
-      command += ` --model ${params.model}`;
+    // Phase 6-L — omit Codex-incompatible models (e.g. Claude 'opus').
+    const oneShotModel = resolveLaunchModel('codex', params.model);
+    if (oneShotModel) {
+      command += ` --model ${oneShotModel}`;
     }
 
     const escaped = params.prompt.replace(/'/g, "'\\''");

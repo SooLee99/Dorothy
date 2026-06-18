@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X, Download, ExternalLink, RotateCw, Loader2 } from 'lucide-react';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { usePathname } from 'next/navigation';
+import ScreenDescription from './ScreenDescription';
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
@@ -79,6 +80,9 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
   const [downloadPercent, setDownloadPercent] = useState(0);
   const [downloadSpeed, setDownloadSpeed] = useState(0);
   const downloadClickedRef = useRef(false);
+
+  // 3번 정밀화 — UI heartbeat는 ★main 프로세스로 이전(electron/main.ts). renderer ping은 최소화 시 백그라운드
+  //   throttle로 끊겨 "최소화=정지" 오작동 → main heartbeat(getAllWindows>0)로 대체(최소화 유지·완전 닫힘만 정지).
 
   // Listen for auto-check update available event from main process
   useEffect(() => {
@@ -238,6 +242,7 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
         transition={{ duration: 0.2, ease: 'easeInOut' }}
         className="min-h-screen pt-16 lg:pt-0 p-4 lg:p-6 pb-6"
       >
+        <ScreenDescription />
         {children}
       </motion.main>
 

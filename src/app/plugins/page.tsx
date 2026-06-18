@@ -26,6 +26,7 @@ import {
   User,
 } from 'lucide-react';
 import { useClaude } from '@/hooks/useClaude';
+import { FreshnessBadge } from '@/components/Freshness'; // 갭2: 신선도 배지
 import { isElectron } from '@/hooks/useElectron';
 import { usePluginsDatabase, type Plugin, type Marketplace } from '@/lib/plugins-database';
 // Import xterm CSS
@@ -182,7 +183,7 @@ const PluginCard = React.memo(function PluginCard({
 });
 
 export default function PluginsPage() {
-  const { data, loading } = useClaude();
+  const { data, loading, error, lastFetch } = useClaude();
   const { plugins: PLUGINS_DATABASE, categories: PLUGIN_CATEGORIES, marketplaces: MARKETPLACES, authors: AUTHORS, loading: pluginsLoading } = usePluginsDatabase();
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -542,9 +543,9 @@ export default function PluginsPage() {
       <div className="flex flex-col gap-3 shrink-0">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-xl lg:text-2xl font-bold tracking-tight">Plugin Marketplace</h1>
+            <h1 className="text-xl lg:text-2xl font-bold tracking-tight">플러그인 마켓플레이스 <span className="align-middle"><FreshnessBadge lastSuccessAt={lastFetch} pollMs={10000} ok={!error} label="수신" /></span></h1>
             <p className="text-muted-foreground text-xs lg:text-sm mt-1 hidden sm:block">
-              Extend Claude Code with plugins for code intelligence, integrations, and workflows
+              코드 인텔리전스·연동·워크플로우 플러그인으로 Claude Code를 확장
             </p>
           </div>
           <a

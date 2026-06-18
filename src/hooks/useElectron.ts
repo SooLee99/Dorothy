@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import type { AgentStatus, AgentEvent, ElectronAPI, AgentCharacter, AgentProvider } from '@/types/electron';
+import { dorothyClient } from '@/lib/dorothyClient';
 
 // Check if we're running in Electron
 export const isElectron = (): boolean => {
@@ -16,6 +17,16 @@ export function useElectronAgents() {
   // Fetch all agents
   const fetchAgents = useCallback(async () => {
     if (!isElectron()) {
+      // Web fallback: read-only display of ~/.dorothy/agents.json via API route.
+      try {
+        const res = await fetch('/api/dorothy/agents');
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) setAgents(data as AgentStatus[]);
+        }
+      } catch (err) {
+        console.error('Failed to fetch agents from web fallback:', err);
+      }
       setIsLoading(false);
       return;
     }
@@ -61,10 +72,22 @@ export function useElectronAgents() {
     obsidianVaultPaths?: string[];
   }) => {
     if (!isElectron()) {
-      throw new Error('Electron API not available');
+      // Web mode is read-only. Use the Electron app to run/control agents.
+      throw new Error('이 작업은 Dorothy 데스크톱 앱(Electron)에서만 동작합니다. Cmd+Tab으로 "Electron" 창을 여시거나, 거기서 다시 시도해 주세요.');
     }
     const agent = await window.electronAPI!.agent.create(config);
     setAgents(prev => [...prev, agent]);
+    // 어느 생성 경로에서 만들든 새 에이전트를 현재 선택된 회사로 자동 매핑(미분류 방지).
+    // companies.json 만 갱신하며 agents.json 은 건드리지 않는다. 실패해도 생성에는 영향 없음.
+    try {
+      const cJson = await dorothyClient.companies.get();
+      const cid = cJson?.selectedCompanyId;
+      if (cid && agent?.id) {
+        void dorothyClient.companies.mapAgent(agent.id, cid, config.name ?? null).catch(() => {});
+      }
+    } catch {
+      /* 회사 매핑 실패는 무시 (web/static 모드 등 미지원) */
+    }
     return agent;
   }, []);
 
@@ -85,7 +108,8 @@ export function useElectronAgents() {
     worktree?: { enabled: boolean; branchName: string };
   }) => {
     if (!isElectron()) {
-      throw new Error('Electron API not available');
+      // Web mode is read-only. Use the Electron app to run/control agents.
+      throw new Error('이 작업은 Dorothy 데스크톱 앱(Electron)에서만 동작합니다. Cmd+Tab으로 "Electron" 창을 여시거나, 거기서 다시 시도해 주세요.');
     }
     const result = await window.electronAPI!.agent.update(params);
     if (result.success && result.agent) {
@@ -101,7 +125,8 @@ export function useElectronAgents() {
     options?: { model?: string; resume?: boolean; provider?: AgentProvider; localModel?: string }
   ) => {
     if (!isElectron()) {
-      throw new Error('Electron API not available');
+      // Web mode is read-only. Use the Electron app to run/control agents.
+      throw new Error('이 작업은 Dorothy 데스크톱 앱(Electron)에서만 동작합니다. Cmd+Tab으로 "Electron" 창을 여시거나, 거기서 다시 시도해 주세요.');
     }
     await window.electronAPI!.agent.start({ id, prompt, options });
     await fetchAgents();
@@ -110,7 +135,8 @@ export function useElectronAgents() {
   // Stop an agent
   const stopAgent = useCallback(async (id: string) => {
     if (!isElectron()) {
-      throw new Error('Electron API not available');
+      // Web mode is read-only. Use the Electron app to run/control agents.
+      throw new Error('이 작업은 Dorothy 데스크톱 앱(Electron)에서만 동작합니다. Cmd+Tab으로 "Electron" 창을 여시거나, 거기서 다시 시도해 주세요.');
     }
     await window.electronAPI!.agent.stop(id);
     await fetchAgents();
@@ -119,7 +145,8 @@ export function useElectronAgents() {
   // Remove an agent
   const removeAgent = useCallback(async (id: string) => {
     if (!isElectron()) {
-      throw new Error('Electron API not available');
+      // Web mode is read-only. Use the Electron app to run/control agents.
+      throw new Error('이 작업은 Dorothy 데스크톱 앱(Electron)에서만 동작합니다. Cmd+Tab으로 "Electron" 창을 여시거나, 거기서 다시 시도해 주세요.');
     }
     await window.electronAPI!.agent.remove(id);
     setAgents(prev => prev.filter(a => a.id !== id));
@@ -128,7 +155,8 @@ export function useElectronAgents() {
   // Send input to an agent
   const sendInput = useCallback(async (id: string, input: string) => {
     if (!isElectron()) {
-      throw new Error('Electron API not available');
+      // Web mode is read-only. Use the Electron app to run/control agents.
+      throw new Error('이 작업은 Dorothy 데스크톱 앱(Electron)에서만 동작합니다. Cmd+Tab으로 "Electron" 창을 여시거나, 거기서 다시 시도해 주세요.');
     }
     await window.electronAPI!.agent.sendInput({ id, input });
   }, []);
@@ -248,7 +276,8 @@ export function useElectronSkills() {
 
   const installSkill = useCallback(async (repo: string) => {
     if (!isElectron()) {
-      throw new Error('Electron API not available');
+      // Web mode is read-only. Use the Electron app to run/control agents.
+      throw new Error('이 작업은 Dorothy 데스크톱 앱(Electron)에서만 동작합니다. Cmd+Tab으로 "Electron" 창을 여시거나, 거기서 다시 시도해 주세요.');
     }
     const result = await window.electronAPI!.skill.install(repo);
     await fetchInstalledSkills();
@@ -257,7 +286,8 @@ export function useElectronSkills() {
 
   const linkToProvider = useCallback(async (skillName: string, providerId: string) => {
     if (!isElectron()) {
-      throw new Error('Electron API not available');
+      // Web mode is read-only. Use the Electron app to run/control agents.
+      throw new Error('이 작업은 Dorothy 데스크톱 앱(Electron)에서만 동작합니다. Cmd+Tab으로 "Electron" 창을 여시거나, 거기서 다시 시도해 주세요.');
     }
     return window.electronAPI!.skill.linkToProvider({ skillName, providerId });
   }, []);
@@ -301,7 +331,8 @@ export function useElectronFS() {
 
   const openFolderDialog = useCallback(async () => {
     if (!isElectron()) {
-      throw new Error('Electron API not available');
+      // Web mode is read-only. Use the Electron app to run/control agents.
+      throw new Error('이 작업은 Dorothy 데스크톱 앱(Electron)에서만 동작합니다. Cmd+Tab으로 "Electron" 창을 여시거나, 거기서 다시 시도해 주세요.');
     }
     return window.electronAPI!.dialog.openFolder();
   }, []);
@@ -323,14 +354,16 @@ export function useElectronFS() {
 export function useElectronShell() {
   const openTerminal = useCallback(async (cwd: string, command?: string) => {
     if (!isElectron()) {
-      throw new Error('Electron API not available');
+      // Web mode is read-only. Use the Electron app to run/control agents.
+      throw new Error('이 작업은 Dorothy 데스크톱 앱(Electron)에서만 동작합니다. Cmd+Tab으로 "Electron" 창을 여시거나, 거기서 다시 시도해 주세요.');
     }
     return window.electronAPI!.shell.openTerminal({ cwd, command });
   }, []);
 
   const exec = useCallback(async (command: string, cwd?: string) => {
     if (!isElectron()) {
-      throw new Error('Electron API not available');
+      // Web mode is read-only. Use the Electron app to run/control agents.
+      throw new Error('이 작업은 Dorothy 데스크톱 앱(Electron)에서만 동작합니다. Cmd+Tab으로 "Electron" 창을 여시거나, 거기서 다시 시도해 주세요.');
     }
     return window.electronAPI!.shell.exec({ command, cwd });
   }, []);

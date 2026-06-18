@@ -10,6 +10,9 @@ const STORAGE_KEY = 'terminals-tab-manager';
 interface TabManagerState {
   customTabs: CustomTab[];
   activeTab: ActiveTab;
+  // 프로젝트 탭별 에이전트 슬롯 교체 오버라이드: projectPath -> { 원래agentId: 대체agentId }
+  // 프로젝트 탭은 projectPath 필터로 에이전트가 자동 결정되므로, 슬롯 교체는 이 맵으로 표현한다.
+  projectOverrides?: Record<string, Record<string, string>>;
 }
 
 function createDefaultState(): TabManagerState {
@@ -22,6 +25,7 @@ function createDefaultState(): TabManagerState {
   return {
     customTabs: [mainTab],
     activeTab: { type: 'custom', tabId: mainTab.id },
+    projectOverrides: {},
   };
 }
 
@@ -173,6 +177,41 @@ export function useTabManager({ existingAgentIds, isLoading }: UseTabManagerOpti
     }));
   }, []);
 
+  // Replace one agent slot with another, preserving panel position.
+  // No-op if the new agent is already in the tab (avoid duplicates) or old not found.
+  const changeAgentInTab = useCallback((tabId: string, oldAgentId: string, newAgentId: string) => {
+    if (oldAgentId === newAgentId) return;
+    setState(prev => {
+      const tab = prev.customTabs.find(t => t.id === tabId);
+      if (!tab) return prev;
+      const idx = tab.agentIds.indexOf(oldAgentId);
+      if (idx === -1 || tab.agentIds.includes(newAgentId)) return prev;
+      const newAgentIds = [...tab.agentIds];
+      newAgentIds[idx] = newAgentId;
+      return {
+        ...prev,
+        customTabs: prev.customTabs.map(t =>
+          t.id === tabId ? { ...t, agentIds: newAgentIds } : t
+        ),
+      };
+    });
+  }, []);
+
+  // 프로젝트 탭의 슬롯 교체: 해당 projectPath 에서 oldAgentId 자리를 newAgentId 로 표시하도록 오버라이드.
+  // 원복(같은 id 선택)하면 오버라이드 제거.
+  const changeAgentInProject = useCallback((projectPath: string, oldAgentId: string, newAgentId: string) => {
+    setState(prev => {
+      const cur = prev.projectOverrides?.[projectPath] ?? {};
+      const next: Record<string, string> = { ...cur };
+      if (newAgentId === oldAgentId) delete next[oldAgentId];
+      else next[oldAgentId] = newAgentId;
+      return {
+        ...prev,
+        projectOverrides: { ...(prev.projectOverrides ?? {}), [projectPath]: next },
+      };
+    });
+  }, []);
+
   // --- Layout ---
 
   const setTabLayout = useCallback((tabId: string, preset: LayoutPreset) => {
@@ -216,6 +255,9 @@ export function useTabManager({ existingAgentIds, isLoading }: UseTabManagerOpti
     reorderTabs,
     addAgentToTab,
     removeAgentFromTab,
+    changeAgentInTab,
+    changeAgentInProject,
+    projectOverrides: state.projectOverrides ?? {},
     setTabLayout,
     setActiveTab,
     activeCustomTab,

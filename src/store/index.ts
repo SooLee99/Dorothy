@@ -4,6 +4,26 @@ import type { Agent, Task, Project, Skill, Entity, Chat, DashboardStats } from '
 // Sample data generators
 const generateId = () => Math.random().toString(36).substring(2, 15);
 
+// MVP TODO (Phase 0 → Phase 2):
+//   The `sampleSkills` / `sampleAgents` / `sampleTasks` / `sampleProjects` /
+//   `sampleEntities` / `sampleChats` arrays below are demo seed data, not real
+//   runtime data. They're still wired into the Zustand store's initial state
+//   so the legacy mock-only screens (`/`, `/projects`, `/entities`, `/chats`)
+//   render something out of the box.
+//
+//   Phase 0 only marks them; Phase 2 (task P0-003 in
+//   docs/rebuild-target-mvp/mvp-migration-tasks.yaml) will move them into
+//   `src/store/demo-data.ts` and gate them on `import.meta.env.DEV`. Touching
+//   this file destructively now risks breaking the existing dashboard before
+//   the new Run-based screens land in Phase 2, so the safer change is the
+//   TODO + planned migration documented here.
+//
+//   When you migrate them: extract each `sampleX` to `demo-data.ts`,
+//   re-export, then guard the initial state with
+//     agents: import.meta.env.DEV ? sampleAgents : [],
+//   etc. Search for the marker `MVP-DEMO-DATA` to find every reference site.
+//
+// MVP-DEMO-DATA
 const sampleSkills: Skill[] = [
   { id: '1', name: 'Code Review', description: 'Analyze code for bugs, security issues, and improvements', icon: 'code', category: 'code', enabled: true },
   { id: '2', name: 'Frontend Design', description: 'Create beautiful, responsive user interfaces', icon: 'palette', category: 'design', enabled: true },
@@ -15,6 +35,7 @@ const sampleSkills: Skill[] = [
   { id: '8', name: 'Refactoring', description: 'Improve code structure without changing behavior', icon: 'refresh-cw', category: 'code', enabled: true },
 ];
 
+// MVP-DEMO-DATA
 const sampleAgents: Agent[] = [
   {
     id: 'agent-1',

@@ -34,6 +34,9 @@ export interface AgentStatus {
   lastActivity: string;
   error?: string;
   ptyId?: string;
+  /** 순서3 — 살아있는 PTY 프로세스 pid(spawn 시 기록, 종료 시 비움). 리컨실러가
+   *  레지스트리↔실제 프로세스를 매핑해 '미추적 스폰'을 식별하게 한다("11 vs 20" 수리). */
+  pid?: number;
   character?: AgentCharacter;
   name?: string;
   pathMissing?: boolean;
@@ -43,6 +46,11 @@ export interface AgentStatus {
   effort?: AgentEffort;
   currentSessionId?: string;
   kanbanTaskId?: string;  // For kanban task completion tracking
+  // MVP Run linkage — optional, populated lazily by the new dorothy-db layer.
+  // Older `agents.json` files without these fields keep loading unchanged.
+  currentRunId?: string;
+  currentRunStepId?: string;
+  currentAgentSessionId?: string;
   statusLine?: string;       // ANSI-stripped last meaningful output line
   lastCleanOutput?: string;  // Clean text output captured from transcript by hooks
   provider?: AgentProvider;   // 'claude' (default) or 'local' (Tasmania)
@@ -102,6 +110,14 @@ export interface AppSettings {
   chromeEnabled: boolean;
   autoCheckUpdates: boolean;
   cliPaths: CLIPaths;
+  /** Phase 6-K — optional explicit absolute path to the `claude` binary.
+   *  Highest-priority source for ClaudeProvider.resolveBinaryPath; falls back
+   *  to PATH + well-known install dirs when unset/invalid. */
+  claudeBinaryPath?: string;
+  /** Phase 6-M — optional provider default models. Used at launch only when
+   *  the agent's own model is unset or incompatible; never rewrites agents.json. */
+  defaultCodexModel?: string;
+  defaultClaudeModel?: string;
   opencodeEnabled: boolean;
   opencodeDefaultModel: string;
   defaultProvider?: AgentProvider;
@@ -118,4 +134,29 @@ export interface AppSettings {
   favoriteProjects?: string[];
   hiddenProjects?: string[];
   defaultProjectPath?: string;
+  // MVP Phase 4.5 — feature flag for the new orchestrator-driven dispatch.
+  // When false (default), the orchestrator only *selects* the next worker;
+  // the existing kanban auto-spawn / `/api/agents/:id/start` path actually
+  // spawns the PTY. When true, the orchestrator calls the start endpoint
+  // itself with a Run-context prompt. Failures fall back to the legacy path,
+  // so flipping this on is reversible.
+  dorothyOrchestratorAutoSpawn?: boolean;
+  // Phase 5A — GitHub webhook receiver.
+  //   `githubWebhookSecret`: HMAC-SHA256 shared secret with GitHub. When
+  //     empty, the receiver rejects everything unless
+  //     `dorothyDevAllowUnsignedWebhook=true` (developer mode for curl).
+  //   `dorothyPrCiAutoTransition`: when true, a merged PR or a failed CI run
+  //     may move a linked Run between MVP states (reporting→completed,
+  //     reporting→needs_fix). Default off so the receiver mirrors data only.
+  githubWebhookSecret?: string;
+  dorothyDevAllowUnsignedWebhook?: boolean;
+  dorothyPrCiAutoTransition?: boolean;
+  /**
+   * Phase 5C-B — Auto Resume Scheduler mode. Accepts:
+   *   - `'dry-run'` (default): record candidates, never call startAgent
+   *   - `true` / `'live'` / `'on'`: dispatch the worker after resumeAt
+   *   - `false` / `'off'`: scheduler runs but produces no UI/state changes
+   * Manual user-initiated `resumeNow` works regardless of this flag.
+   */
+  dorothyAutoResumeRateLimitedSessions?: boolean | 'dry-run' | 'live' | 'on' | 'off' | 'true' | 'false';
 }

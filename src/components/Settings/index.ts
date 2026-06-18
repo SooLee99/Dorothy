@@ -33,3 +33,7 @@ export { SkillsSection } from './SkillsSection';
 export { McpSection } from './McpSection';
 export { CLIPathsSection } from './CLIPathsSection';
 export { SystemSection } from './SystemSection';
+// Phase 5B — read-only GitHub webhook policy summary.
+export { GithubWebhookSection } from './GithubWebhookSection';
+// Phase 5C-C — read-only automation feature-flag overview.
+export { AutomationPolicySection } from './AutomationPolicySection';

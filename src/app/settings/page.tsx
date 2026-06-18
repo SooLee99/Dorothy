@@ -26,6 +26,8 @@ import {
   McpSection,
   CLIPathsSection,
   SystemSection,
+  GithubWebhookSection,
+  AutomationPolicySection,
   SECTIONS,
 } from '@/components/Settings';
 import type { SettingsSection } from '@/components/Settings';
@@ -172,6 +174,12 @@ function SettingsPageInner() {
             onSaveAppSettings={handleSaveAppSettings}
           />
         );
+      case 'github':
+        // Phase 5B — read-only display of webhook + auto-transition policy.
+        return <GithubWebhookSection appSettings={appSettings} />;
+      case 'automation':
+        // Phase 5C-C — read-only automation feature-flag overview.
+        return <AutomationPolicySection appSettings={appSettings} />;
       default:
         return null;
     }
@@ -205,9 +213,9 @@ function SettingsPageInner() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 shrink-0">
         <div>
-          <h1 className="text-xl lg:text-2xl font-bold tracking-tight">Settings</h1>
+          <h1 className="text-xl lg:text-2xl font-bold tracking-tight">설정</h1>
           <p className="text-muted-foreground text-xs lg:text-sm mt-1 hidden sm:block">
-            Configure Dorothy preferences
+            Dorothy 환경설정
           </p>
         </div>
         <div className="flex gap-2 sm:gap-3">

@@ -1,11 +1,22 @@
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as pty from 'node-pty';
 import { app } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
-import { agents, saveAgents } from '../../core/agent-manager';
+import { agents, saveAgents, reloadAgentsFromDisk } from '../../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../../core/pty-manager';
+import {
+  buildAgentTerminalSnapshot,
+  buildBaselineSnapshots,
+  isSnapshotBaselineAgent,
+  maskLine,
+  terminalLines,
+  type AgentLike,
+} from '../../core/terminal-output-mask';
 import { buildFullPath } from '../../utils/path-builder';
+import { recordStart, recordOutput, recordExit } from '../../core/observability/session-metrics';
+import { createAgentSession } from '../dorothy/agent-session-service'; // 순서4② 심장수술 다리
 import { AgentStatus, AgentCharacter } from '../../types';
 import { RouteApp, RouteContext } from './types';
 
@@ -90,6 +101,20 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     sendJson({ agents: agentList });
   });
 
+  // GET /api/agents/terminal-snapshots — MUST be registered before the
+  // `/api/agents/:id` regex (first-match wins) or :id would swallow it.
+  // Phase 6-AE — read-only, masked snapshots for the 11 baseline operation
+  // agents (legacy UUID / codex+opus excluded). Always returns 11 slots.
+  app_.get('/api/agents/terminal-snapshots', (req, sendJson) => {
+    const cap = Math.min(2000, Math.max(1, parseInt(req.url.searchParams.get('lines') || '200', 10)));
+    const byId = new Map<string, AgentLike>();
+    for (const a of agents.values()) {
+      if (typeof a.id === 'string' && a.id) byId.set(a.id, a as AgentLike);
+    }
+    const updatedAt = new Date().toISOString();
+    sendJson({ snapshots: buildBaselineSnapshots(byId, updatedAt, cap), updatedAt });
+  });
+
   // GET /api/agents/:id
   app_.get(/^\/api\/agents\/([^/]+)$/, (req, sendJson) => {
     const agent = agents.get(req.params.id);
@@ -101,6 +126,8 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
   });
 
   // GET /api/agents/:id/output
+  // Phase 6-AE — read-only + SECRET-MASKED. Returns both the masked joined
+  // string (back-compat) and a masked, ANSI-stripped outputLines[] array.
   app_.get(/^\/api\/agents\/([^/]+)\/output$/, (req, sendJson) => {
     const agent = agents.get(req.params.id);
     if (!agent) {
@@ -108,8 +135,23 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
       return;
     }
     const lines = parseInt(req.url.searchParams.get('lines') || '100', 10);
-    const output = agent.output.slice(-lines).join('');
-    sendJson({ output, status: agent.status });
+    // Phase 6-V — slug/file-based agents may have no output array yet.
+    const raw = (agent.output ?? []).slice(-lines).join('');
+    const output = maskLine(raw);
+    sendJson({ output, outputLines: terminalLines(agent.output, lines), status: agent.status, masked: true });
+  });
+
+  // GET /api/agents/:id/terminal-snapshot — single baseline agent (404 if not baseline)
+  app_.get(/^\/api\/agents\/([^/]+)\/terminal-snapshot$/, (req, sendJson) => {
+    const id = req.params.id;
+    if (!isSnapshotBaselineAgent(id)) {
+      sendJson({ error: 'Not a managed operation agent' }, 404);
+      return;
+    }
+    const cap = Math.min(2000, Math.max(1, parseInt(req.url.searchParams.get('lines') || '200', 10)));
+    const agent = agents.get(id) as AgentLike | undefined;
+    const updatedAt = new Date().toISOString();
+    sendJson({ snapshot: buildAgentTerminalSnapshot(id, agent, updatedAt, cap), updatedAt });
   });
 
   // POST /api/agents
@@ -146,6 +188,21 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     sendJson({ agent });
   });
 
+  // POST /api/agents/reload-from-disk — Phase 6-AQ: agents.json 디스크 변경을
+  // in-memory 맵으로 반영(헤드리스). PM-tick 의 fallback/restore 후 호출용.
+  // reloadAgentsFromDisk 는 활성 PTY 세션을 보존하며 정의만 갱신한다.
+  app_.post('/api/agents/reload-from-disk', async (req, sendJson) => {
+    try {
+      const reason = (req.body as { reason?: string } | undefined)?.reason || 'api';
+      // ★mergeMetadataForExisting: true — 기존 에이전트의 안전 메타(provider/model 등)를 디스크에서 갱신.
+      //   (이게 없으면 추가/삭제만 하고 provider 변경이 in-memory 에 반영 안 됨 — orchestrator claude 전환 불가)
+      const result = await reloadAgentsFromDisk({ reason, mergeMetadataForExisting: true });
+      sendJson({ ok: true, result });
+    } catch (err) {
+      sendJson({ ok: false, error: err instanceof Error ? err.message : String(err) }, 500);
+    }
+  });
+
   // POST /api/agents/:id/start
   app_.post(/^\/api\/agents\/([^/]+)\/start$/, (req, sendJson) => {
     const agent = agents.get(req.params.id);
@@ -163,39 +220,55 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     }
 
     const workingDir = (agent.worktreePath || agent.projectPath).replace(/'/g, "'\\''");
-    let command = `cd '${workingDir}' && claude`;
+    const provider = (agent.provider || 'claude') as 'claude' | 'codex' | string;
+    void bodyPermissionMode; // 정책: 항상 자율 모드(아래에서 provider 별로 강제 적용)
 
     const isAutomationAgent = agent.name?.toLowerCase().includes('automation:');
-    const usePrintMode = printMode || isAutomationAgent;
-
-    if (usePrintMode) {
-      command += ' -p';
-    }
-
     const isSuperAgentApi = agent.name?.toLowerCase().includes('super agent') ||
                             agent.name?.toLowerCase().includes('orchestrator');
+    const usePrintMode = printMode || isAutomationAgent;
 
-    if (isSuperAgentApi || isAutomationAgent) {
-      const mcpConfigPath = path.join(app.getPath('home'), '.claude', 'mcp.json');
-      if (fs.existsSync(mcpConfigPath)) {
-        command += ` --mcp-config '${mcpConfigPath}'`;
+    let command: string;
+    if (provider === 'codex') {
+      // OpenAI Codex CLI — 신뢰 프롬프트·승인·샌드박스 모두 우회(완전 자율).
+      // 인터랙티브 모드에서 디렉토리 신뢰 프롬프트("Do you trust...")가 살아 있어
+      // --dangerously-bypass-approvals-and-sandbox 로 통째 우회한다.
+      command = `cd '${workingDir}' && codex --dangerously-bypass-approvals-and-sandbox`;
+      if (agent.secondaryProjectPath) {
+        command += ` --cd '${agent.secondaryProjectPath.replace(/'/g, "'\\''")}'`;
       }
-    }
-
-    if (agent.secondaryProjectPath) {
-      command += ` --add-dir '${agent.secondaryProjectPath.replace(/'/g, "'\\''")}'`;
-    }
-    const effectiveMode = bodyPermissionMode ?? agent.permissionMode ?? (agent.skipPermissions ? 'auto' : 'normal');
-    if (effectiveMode === 'auto' || effectiveMode === 'bypass') {
+      // claude-only 모델명(opus/sonnet/haiku/claude-*)은 codex 로 넘기지 않음(전형적 혼선 방지).
+      const resolvedModel = model || agent.model;
+      if (resolvedModel && !/^(opus|sonnet|haiku|claude(-|$))/i.test(resolvedModel)) {
+        if (!/^[a-zA-Z0-9._:/-]+$/.test(resolvedModel)) {
+          sendJson({ error: 'Invalid model name' }, 400);
+          return;
+        }
+        command += ` --model '${resolvedModel}'`;
+      }
+      if (usePrintMode) command += ' exec';
+    } else {
+      // Anthropic Claude Code — 항상 --dangerously-skip-permissions (자율).
+      command = `cd '${workingDir}' && claude`;
+      if (usePrintMode) command += ' -p';
+      if (isSuperAgentApi || isAutomationAgent) {
+        const mcpConfigPath = path.join(app.getPath('home'), '.claude', 'mcp.json');
+        if (fs.existsSync(mcpConfigPath)) {
+          command += ` --mcp-config '${mcpConfigPath}'`;
+        }
+      }
+      if (agent.secondaryProjectPath) {
+        command += ` --add-dir '${agent.secondaryProjectPath.replace(/'/g, "'\\''")}'`;
+      }
       command += ' --dangerously-skip-permissions';
-    }
-    const resolvedModel = model || agent.model;
-    if (resolvedModel) {
-      if (!/^[a-zA-Z0-9._:/-]+$/.test(resolvedModel)) {
-        sendJson({ error: 'Invalid model name' }, 400);
-        return;
+      const resolvedModel = model || agent.model;
+      if (resolvedModel) {
+        if (!/^[a-zA-Z0-9._:/-]+$/.test(resolvedModel)) {
+          sendJson({ error: 'Invalid model name' }, 400);
+          return;
+        }
+        command += ` --model '${resolvedModel}'`;
       }
-      command += ` --model '${resolvedModel}'`;
     }
 
     let finalPrompt = prompt;
@@ -225,8 +298,22 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
 
     const ptyId = uuidv4();
     ptyProcesses.set(ptyId, ptyProcess);
+    recordStart(ptyId, agent.id, ptyProcess.pid); // PR-0a — 세션 계측 시작
 
     agent.ptyId = ptyId;
+    agent.pid = ptyProcess.pid; // 순서3 1-a — ★dispatch 워커(start) pid 영속. PR#4가 놓친 경로(429 원인). 리컨실러가 추적.
+    // 순서4② 심장수술 canary — AgentSession 다리(죽은 createAgentSession 잇기). recon: 양 경로(Run dispatch·worker-nudge)가
+    //   여기 /start 단일 chokepoint 수렴 → 한 곳 삽입으로 둘 다 커버. ★flag 파일(없으면 off=현 상태)·scope 1-agent·try/catch.
+    //   세션 생성=① 부활(dispatch가 findActiveSessionForAgent→attachSessionToStep 바인딩). 실패해도 spawn/디스패치 안 막음.
+    try {
+      const bridgeFlag = path.join(os.homedir(), '.dorothy', 'runtime', 'agentsession-bridge.flag');
+      if (fs.existsSync(bridgeFlag)) {
+        const scope = fs.readFileSync(bridgeFlag, 'utf8').trim() || 'bueongi-dev';
+        if (scope === '*' || scope.split(',').map(s => s.trim()).includes(agent.id)) {
+          createAgentSession({ agentId: agent.id, provider: agent.provider || 'claude', pid: ptyProcess.pid });
+        }
+      }
+    } catch { /* best-effort — 세션 생성 실패는 spawn/디스패치 안 막음(전체 정지 방지) */ }
     agent.status = 'running';
     agent.currentTask = prompt;
     agent.output = [];
@@ -236,6 +323,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     saveAgents();
 
     ptyProcess.onData((data: string) => {
+      recordOutput(ptyId, data); // PR-0a — O(1) 계측
       agent.output.push(data);
       if (agent.output.length > 10000) {
         agent.output = agent.output.slice(-5000);
@@ -248,6 +336,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
     });
 
     ptyProcess.onExit(({ exitCode }) => {
+      recordExit(ptyId, exitCode); // PR-0a — 종료 계측(즉시, setTimeout 밖)
       // Delay status change to let hooks (on-stop.sh, task-completed.sh) finish
       // capturing output before wait_for_agent resolves.
       setTimeout(() => {
@@ -257,6 +346,7 @@ export function registerAgentRoutes(app_: RouteApp, ctx: RouteContext): void {
         if (exitCode !== 0) {
           agent.error = `Process exited with code ${exitCode}`;
         }
+        agent.pid = undefined; // 순서3 1-a — 종료 시 pid 비움(dead 잔존·오매칭 방지).
         agent.lastActivity = new Date().toISOString();
         ptyProcesses.delete(ptyId);
         saveAgents();

@@ -41,6 +41,18 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
   { key: 'Escape', description: 'Exit fullscreen', action: 'exit-fullscreen' },
 ];
 
+// Engine/provider badge styling — shows which agent/engine drives each terminal.
+// Keyed by AgentStatus.provider; falls back to `default` for unknown/missing.
+// 라벨은 사용자가 한눈에 GPT 인지 Claude 인지 알 수 있게 명시(공급사 포함).
+export const PROVIDER_BADGE: Record<string, { label: string; bg: string; text: string }> = {
+  claude: { label: 'Claude (Anthropic)', bg: 'bg-orange-500/20', text: 'text-orange-700' },
+  codex: { label: 'GPT (Codex)', bg: 'bg-green-600/20', text: 'text-green-700' },
+  gemini: { label: 'Gemini (Google)', bg: 'bg-blue-500/20', text: 'text-blue-700' },
+  pi: { label: 'Pi (Inflection)', bg: 'bg-purple-500/20', text: 'text-purple-700' },
+  local: { label: 'Local', bg: 'bg-gray-500/20', text: 'text-gray-700' },
+  default: { label: 'Engine ?', bg: 'bg-gray-500/15', text: 'text-gray-600' },
+};
+
 // Status colors (light theme compatible)
 export const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
   running: { bg: 'bg-green-600/15', text: 'text-green-700', dot: 'bg-green-600' },

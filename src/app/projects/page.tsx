@@ -17,6 +17,7 @@ import {
   Play,
   RotateCcw,
   Plus,
+  FileText,
   Trash2,
   FolderPlus,
   ChevronDown,
@@ -33,6 +34,8 @@ import { useElectronAgents, useElectronFS, useElectronSkills, isElectron } from 
 import type { ClaudeProject } from '@/lib/claude-code';
 import type { AgentStatus, AgentCharacter } from '@/types/electron';
 import NewChatModal from '@/components/NewChatModal';
+import { NewTaskModal } from '@/components/KanbanBoard/components/NewTaskModal'; // 프로젝트 상세 작업 추가
+import { FreshnessBadge } from '@/components/Freshness'; // 갭2: 신선도 배지
 
 // Generate consistent colors for projects based on name
 const getProjectColor = (name: string) => {
@@ -87,16 +90,22 @@ const stripAnsi = (str: string): string => {
 };
 
 export default function ProjectsPage() {
-  const { data, loading, error } = useClaude();
+  const { data, loading, error, lastFetch } = useClaude();
   const { agents, createAgent, startAgent, isElectron: hasElectron } = useElectronAgents();
   const { projects: electronProjects, openFolderDialog } = useElectronFS();
   const { installedSkills, refresh: refreshSkills } = useElectronSkills();
   const [selectedProject, setSelectedProject] = useState<ClaudeProject | null>(null);
+  const [showAddTaskModal, setShowAddTaskModal] = useState(false); // 프로젝트 상세 작업 추가 모달
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'favorites' | 'active' | 'hidden'>('active');
   const [favorites, setFavorites] = useState<string[]>([]);
   const [hiddenProjects, setHiddenProjects] = useState<string[]>([]);
   const [customProjects, setCustomProjects] = useState<CustomProject[]>([]);
+  // Phase 6-AH — 프로젝트별 설명/메모.
+  const [projectNotes, setProjectNotes] = useState<Record<string, { note: string; updatedAt: string }>>({});
+  const [noteDraft, setNoteDraft] = useState('');
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteSavedAt, setNoteSavedAt] = useState<string>('');
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [gitLoading, setGitLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -143,6 +152,38 @@ export default function ProjectsPage() {
       setGitBranch(null);
     }
   }, [selectedProject, loadGitBranch]);
+
+  // Phase 6-AH — 프로젝트 메모 로드(마운트 시).
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch('/api/dorothy/project-notes', { cache: 'no-store' });
+        const j = await r.json();
+        if (j?.notes) setProjectNotes(j.notes);
+      } catch { /* ignore */ }
+    })();
+  }, []);
+
+  // 선택 프로젝트가 바뀌면 메모 draft 동기화.
+  useEffect(() => {
+    if (!selectedProject) return;
+    setNoteDraft(projectNotes[selectedProject.id]?.note ?? '');
+    setNoteSavedAt(projectNotes[selectedProject.id]?.updatedAt ?? '');
+  }, [selectedProject, projectNotes]);
+
+  const saveProjectNote = useCallback(async () => {
+    if (!selectedProject) return;
+    setNoteSaving(true);
+    try {
+      const r = await fetch('/api/dorothy/project-notes', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: selectedProject.id, note: noteDraft }),
+      });
+      const j = await r.json();
+      if (j?.notes) { setProjectNotes(j.notes); setNoteSavedAt(j.notes[selectedProject.id]?.updatedAt ?? new Date().toISOString()); }
+    } catch { /* ignore */ }
+    finally { setNoteSaving(false); }
+  }, [selectedProject, noteDraft]);
 
   // Load custom projects from localStorage
   useEffect(() => {
@@ -314,9 +355,15 @@ export default function ProjectsPage() {
     return false;
   };
 
-  // Get agents for the selected project
+  // Get agents for the selected project. Phase 6-AH — triplan/dorothy are
+  // collapsed buckets, so match by family rather than exact path.
   const projectAgents = selectedProject
-    ? agents.filter(a => pathsMatch(a.projectPath, selectedProject.path))
+    ? agents.filter(a => {
+        const ap = (a.projectPath || '').toLowerCase();
+        if (selectedProject.id === 'triplan') return ap.includes('/triplan') || ap.includes('soo-auth') || ap.includes('travel-service');
+        if (selectedProject.id === 'dorothy') return ap.includes('/dorothy');
+        return pathsMatch(a.projectPath, selectedProject.path);
+      })
     : [];
 
   // Handle creating a new agent
@@ -390,7 +437,36 @@ export default function ProjectsPage() {
         });
       }
     });
-    return merged;
+
+    // Phase 6-AH — 프로젝트는 dorothy / triplan 2개로만 표시한다.
+    // ~/.claude/projects 에 누적된 임시 샌드박스(paperclip-instances 등)는
+    // 디스크에서 지우지 않고 화면에서만 두 상위 프로젝트로 통합한다.
+    const ROOTS = {
+      triplan: '/Users/soo/workspace/source-code/triplan',
+      dorothy: '/Users/soo/ai-company-stack/Dorothy',
+    } as const;
+    const bucketOf = (p: string): 'triplan' | 'dorothy' | null => {
+      const s = (p || '').toLowerCase();
+      if (s.includes('ai-company-stack/dorothy') || s.includes('/dorothy')) return 'dorothy';
+      if (s.includes('/triplan') || s.includes('soo-auth') || s.includes('travel-service')) return 'triplan';
+      return null;
+    };
+    const buckets = new Map<'triplan' | 'dorothy', ClaudeProject>();
+    for (const p of merged) {
+      const b = bucketOf(p.path);
+      if (!b) continue; // paperclip / tmp / 기타 잡 프로젝트 제외
+      const cur = buckets.get(b);
+      if (!cur) {
+        buckets.set(b, { id: b, name: b, path: ROOTS[b], sessions: [...(p.sessions ?? [])], lastActivity: p.lastActivity });
+      } else {
+        cur.sessions.push(...(p.sessions ?? []));
+        if (p.lastActivity > cur.lastActivity) cur.lastActivity = p.lastActivity;
+      }
+    }
+    // 두 프로젝트는 비어 있어도 항상 노출(dorothy 폴더가 없을 수 있음).
+    if (!buckets.has('triplan')) buckets.set('triplan', { id: 'triplan', name: 'triplan', path: ROOTS.triplan, sessions: [], lastActivity: new Date(0) });
+    if (!buckets.has('dorothy')) buckets.set('dorothy', { id: 'dorothy', name: 'dorothy', path: ROOTS.dorothy, sessions: [], lastActivity: new Date(0) });
+    return [buckets.get('triplan')!, buckets.get('dorothy')!];
   }, [claudeProjects, customProjects]);
 
   // Filter projects based on active tab and search query
@@ -488,9 +564,9 @@ export default function ProjectsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl lg:text-2xl font-bold tracking-tight">Projects</h1>
+          <h1 className="text-xl lg:text-2xl font-bold tracking-tight">프로젝트 <span className="align-middle"><FreshnessBadge lastSuccessAt={lastFetch} pollMs={10000} ok={!error} label="수신" /></span></h1>
           <p className="text-muted-foreground text-xs lg:text-sm mt-1 hidden sm:block">
-            {allProjects.length} project{allProjects.length !== 1 ? 's' : ''}
+            프로젝트 {allProjects.length}개
           </p>
         </div>
         {hasElectron && (
@@ -818,12 +894,22 @@ export default function ProjectsPage() {
                       </p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => setSelectedProject(null)}
-                    className="p-2 hover:bg-secondary transition-colors shrink-0"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {/* 프로젝트 상세에서 이 프로젝트로 칸반 작업 추가(슬랙 없이 대시보드에서) */}
+                    <button
+                      onClick={() => setShowAddTaskModal(true)}
+                      className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-border hover:bg-muted transition-colors"
+                      title="이 프로젝트에 칸반 작업 추가"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> 작업 추가
+                    </button>
+                    <button
+                      onClick={() => setSelectedProject(null)}
+                      className="p-2 hover:bg-secondary transition-colors shrink-0"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Git Branch */}
@@ -898,6 +984,36 @@ export default function ProjectsPage() {
                   <div className="bg-card border border-border p-3 text-center">
                     <p className="text-sm font-medium">{formatDate(selectedProject.lastActivity)}</p>
                     <p className="text-xs text-muted-foreground">Last Active</p>
+                  </div>
+                </div>
+
+                {/* Phase 6-AH — 프로젝트 설명/메모 */}
+                <div className="border border-border bg-card p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-sm font-medium flex items-center gap-2">
+                      <FileText className="w-4 h-4" /> 프로젝트 설명 / 메모
+                    </h3>
+                    {noteSavedAt && (
+                      <span className="text-[10px] text-muted-foreground">저장됨 {formatDate(new Date(noteSavedAt))}</span>
+                    )}
+                  </div>
+                  <textarea
+                    value={noteDraft}
+                    onChange={(e) => setNoteDraft(e.target.value)}
+                    placeholder="이 프로젝트에 대한 설명·메모를 적어두세요(목표, 범위, 주의사항 등). 비밀값은 적지 마세요."
+                    rows={4}
+                    maxLength={4000}
+                    className="w-full px-3 py-2 text-sm bg-background border border-border rounded resize-y focus:outline-none focus:border-foreground/30 placeholder:text-muted-foreground"
+                  />
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-[10px] text-muted-foreground">{noteDraft.length}/4000</span>
+                    <button
+                      onClick={saveProjectNote}
+                      disabled={noteSaving || noteDraft === (projectNotes[selectedProject.id]?.note ?? '')}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs bg-foreground text-background rounded disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {noteSaving ? '저장 중…' : '메모 저장'}
+                    </button>
                   </div>
                 </div>
 
@@ -1132,6 +1248,25 @@ export default function ProjectsPage() {
         initialProjectPath={selectedProject?.path}
         initialStep={2}
       />
+
+      {/* 프로젝트 상세 → 칸반 작업 추가 모달(이 프로젝트로 prefill) */}
+      {showAddTaskModal && selectedProject && (
+        <NewTaskModal
+          initialProjectPath={selectedProject.path}
+          onClose={() => setShowAddTaskModal(false)}
+          onCreate={async (data) => {
+            await window.electronAPI?.kanban?.create({
+              title: data.title,
+              description: data.description,
+              projectId: data.projectId,
+              projectPath: data.projectPath,
+              requiredSkills: data.requiredSkills,
+              priority: data.priority,
+            });
+            setShowAddTaskModal(false);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -57,7 +57,7 @@ export function AgentDetailPanel({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="font-semibold">{agent.name || agent.projectPath.split('/').pop()}</h3>
+              <h3 className="font-semibold">{agent.name || (typeof agent.projectPath === 'string' ? agent.projectPath.split('/').filter(Boolean).pop() : '') || '에이전트'}</h3>
               {agent.provider && agent.provider !== 'claude' && agent.provider !== 'local' && (
                 <span className={`text-[10px] px-1.5 py-0.5 font-medium uppercase tracking-wider ${
                   agent.provider === 'codex' ? 'bg-green-500/15 text-green-600 dark:text-green-400' :
@@ -134,7 +134,7 @@ export function AgentDetailPanel({
       </div>
 
       {/* Skills Bar */}
-      {agent.skills.length > 0 && (
+      {Array.isArray(agent.skills) && agent.skills.length > 0 && (
         <div className="px-5 py-2 border-b border-border-primary bg-accent-purple/5 flex items-center gap-2 overflow-x-auto">
           <Sparkles className="w-4 h-4 text-accent-purple shrink-0" />
           <span className="text-xs text-text-muted shrink-0">Skills:</span>
