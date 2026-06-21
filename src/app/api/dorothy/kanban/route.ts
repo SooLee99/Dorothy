@@ -1,18 +1,14 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
+import { loadTasks } from '@/lib/kanban-store';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
-// Read ~/.dorothy/kanban-tasks.json so web (non-Electron) clients can display kanban.
-// Mutations (move/create/delete) still require Electron — this is read-only.
+// ★단일 소스(근본): hermes `~/.hermes/kanban.db`(SQLite) 에서 읽어 web(비-Electron) 클라이언트에 표시.
+//   Mutations(move/create/delete)는 Electron/MCP 경로 — 여기는 read-only. 매핑은 @/lib/kanban-store.
 export async function GET() {
-  const file = path.join(os.homedir(), '.dorothy', 'kanban-tasks.json');
   try {
-    if (!fs.existsSync(file)) return NextResponse.json([]);
-    const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
-    return NextResponse.json(Array.isArray(data) ? data : []);
+    return NextResponse.json(loadTasks());
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }

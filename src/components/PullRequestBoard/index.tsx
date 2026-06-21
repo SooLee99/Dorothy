@@ -29,6 +29,7 @@ import {
   useDorothyCIRuns,
 } from '@/hooks/useDorothyRuns';
 import { dorothyRunsClient } from '@/lib/dorothyRunsClient';
+import { useProjectScope } from '@/lib/useProjectScope'; // 재설계 ②-a — 전역 프로젝트 스위처
 import type { PullRequest, PullRequestState, CIRun } from '@/types/dorothy';
 import {
   PullRequestStateBadge,
@@ -56,6 +57,7 @@ export default function PullRequestBoard() {
   // Dead-screen fix (#죽은화면) — gh 폴링(B안) 수동 동기화 상태.
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const { matches: matchesProject } = useProjectScope(); // 재설계 ②-a
 
   const { pullRequests, isLoading, error, dbUnavailable, refresh } = useDorothyPullRequests({
     state: stateFilter === 'all' ? undefined : stateFilter,
@@ -94,17 +96,22 @@ export default function PullRequestBoard() {
     return map;
   }, [ciRuns]);
 
+  // 재설계 ②-a — 전역 프로젝트 스위처(식별자: PR 의 repo) 를 검색 위에 AND.
+  const scoped = useMemo(
+    () => pullRequests.filter(p => matchesProject({ repo: p.repo })),
+    [pullRequests, matchesProject],
+  );
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return pullRequests;
-    return pullRequests.filter(p =>
+    if (!q) return scoped;
+    return scoped.filter(p =>
       p.title.toLowerCase().includes(q) ||
       p.externalRef.toLowerCase().includes(q) ||
       `${p.owner}/${p.repo}`.toLowerCase().includes(q) ||
       p.branch.toLowerCase().includes(q) ||
       (p.runId ?? '').toLowerCase().includes(q)
     );
-  }, [pullRequests, query]);
+  }, [scoped, query]);
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto">
@@ -117,8 +124,8 @@ export default function PullRequestBoard() {
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
               GitHub webhook 또는 직접 동기화로 미러된 PR 보기. {query.trim()
-                ? <span>{pullRequests.length}건 중 {filtered.length}건 일치</span>
-                : <span>{pullRequests.length}건</span>}
+                ? <span>{scoped.length}건 중 {filtered.length}건 일치</span>
+                : <span>{scoped.length}건</span>}
             </p>
           </div>
           <div className="flex items-center gap-2">

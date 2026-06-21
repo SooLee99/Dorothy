@@ -276,6 +276,22 @@ function NewFileModal({
 
 // ─── Main page ───────────────────────────────────────────────────────────────
 
+// 정합성 C4-a — ~/.claude/projects 폴더(서브경로별 분열)를 루트 프로젝트로 ★표시 그룹.
+//   실제 폴더는 그대로(데이터 보존)·화면에서만 triplan/bueongi/기타로 묶고 빈 폴더는 숨긴다.
+type MemGroupKey = 'triplan' | 'bueongi' | 'etc';
+const MEM_GROUP_ORDER: MemGroupKey[] = ['triplan', 'bueongi', 'etc'];
+const MEM_GROUP_LABEL: Record<MemGroupKey, string> = {
+  triplan: 'triplan (여행)',
+  bueongi: 'bueongi (부엉이·안심귀가)',
+  etc: '기타',
+};
+function memGroupKey(projectPath: string): MemGroupKey {
+  const h = (projectPath || '').toLowerCase();
+  if (h.includes('triplan') || h.includes('soo-auth') || h.includes('travel-service')) return 'triplan';
+  if (h.includes('bueongi') || h.includes('부엉') || h.includes('안심귀가') || h.includes('frontend-src')) return 'bueongi';
+  return 'etc';
+}
+
 export default function MemoryPage() {
   const {
     filteredProjects,
@@ -478,22 +494,37 @@ export default function MemoryPage() {
                     hidden: {},
                   }}
                 >
-                  {filteredProjects.map((project) => (
-                    <motion.div
-                      key={project.id}
-                      variants={{
-                        hidden: { opacity: 0, x: -8 },
-                        visible: { opacity: 1, x: 0 },
-                      }}
-                    >
-                      <ProjectCard
-                        project={project}
-                        isSelected={selectedProject?.id === project.id}
-                        activeAgents={agentCountByPath.get(project.projectPath) ?? 0}
-                        onClick={() => handleSelectProject(project)}
-                      />
-                    </motion.div>
-                  ))}
+                  {/* C4-a — 루트 프로젝트별 그룹 헤더 + 폴더(빈 폴더 숨김·데이터 보존). */}
+                  {MEM_GROUP_ORDER.flatMap((g) => {
+                    const items = filteredProjects.filter(
+                      (p) => p.hasMemory && memGroupKey(p.projectPath) === g,
+                    );
+                    if (items.length === 0) return [];
+                    return [
+                      <div
+                        key={`memgrp-${g}`}
+                        className="px-3 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60"
+                      >
+                        {MEM_GROUP_LABEL[g]} ({items.length})
+                      </div>,
+                      ...items.map((project) => (
+                        <motion.div
+                          key={project.id}
+                          variants={{
+                            hidden: { opacity: 0, x: -8 },
+                            visible: { opacity: 1, x: 0 },
+                          }}
+                        >
+                          <ProjectCard
+                            project={project}
+                            isSelected={selectedProject?.id === project.id}
+                            activeAgents={agentCountByPath.get(project.projectPath) ?? 0}
+                            onClick={() => handleSelectProject(project)}
+                          />
+                        </motion.div>
+                      )),
+                    ];
+                  })}
                 </motion.div>
               )}
             </div>

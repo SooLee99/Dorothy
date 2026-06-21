@@ -7,6 +7,7 @@ import { Menu, X, Download, ExternalLink, RotateCw, Loader2 } from 'lucide-react
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import ScreenDescription from './ScreenDescription';
+import ProviderLimitBanner from './ProviderLimitBanner';
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
@@ -243,6 +244,8 @@ function ClientLayoutInner({ children }: { children: React.ReactNode }) {
         className="min-h-screen pt-16 lg:pt-0 p-4 lg:p-6 pb-6"
       >
         <ScreenDescription />
+        {/* 전역 토큰/한도 경고 — 모든 화면 상단. 정상이면 렌더 0. */}
+        <ProviderLimitBanner />
         {children}
       </motion.main>
 

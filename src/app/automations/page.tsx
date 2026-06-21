@@ -30,6 +30,7 @@ import {
   TicketCheck,
 } from 'lucide-react';
 import { isElectron } from '@/hooks/useElectron';
+import HermesCronPanel from '@/components/HermesCronPanel';
 
 // Slack Icon component
 const SlackIcon = ({ className }: { className?: string }) => (
@@ -373,9 +374,11 @@ export default function AutomationsPage() {
 
   if (!isElectron()) {
     return (
-      <div className="pt-4 lg:pt-6">
+      <div className="space-y-4 pt-4 lg:pt-6">
+        {/* C4-e — 실 자동개발 동력(hermes cron)은 브라우저에서도 read-only 로 보임 */}
+        <HermesCronPanel />
         <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
-          <p className="text-yellow-500">This feature is only available in the desktop app.</p>
+          <p className="text-yellow-500">아래 GitHub/JIRA 폴링 자동화 생성·관리는 데스크톱 앱에서만 가능합니다.</p>
         </div>
       </div>
     );
@@ -409,6 +412,9 @@ export default function AutomationsPage() {
           </button>
         </div>
       </div>
+
+      {/* C4-e — 실 자동개발 동력(hermes cron) read-only. 아래는 GitHub/JIRA 폴링 자동화. */}
+      <HermesCronPanel />
 
       {/* Toast */}
       <AnimatePresence>

@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+// ★단일 소스: 칸반은 hermes SQLite 에 저장. store 는 호출 시점 os.homedir()(모킹→tmpDir) 를 읽는다.
+import * as kanbanStore from '../../../electron/services/kanban-store';
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -73,11 +75,11 @@ afterEach(() => {
 });
 
 function writeKanbanFile(tasks: unknown[]): void {
-  fs.writeFileSync(path.join(tmpDir, '.dorothy', 'kanban-tasks.json'), JSON.stringify(tasks, null, 2));
+  kanbanStore.saveTasks(tasks as never);
 }
 
 function readKanbanFile(): unknown[] {
-  return JSON.parse(fs.readFileSync(path.join(tmpDir, '.dorothy', 'kanban-tasks.json'), 'utf-8'));
+  return kanbanStore.loadTasks();
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────

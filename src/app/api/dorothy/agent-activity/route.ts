@@ -3,13 +3,16 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { execSync } from 'child_process';
+import { resolveProjectRoot } from '@/lib/projectPaths';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 // 에이전트별 작업 현황 + 산출물(문서·커밋) 집계. IPC handler 와 동일 로직(dev 패리티).
 
-const TRIPLAN_ROOT = '/Users/soo/workspace/source-code/triplan';
+// 하드코딩 제거 ② — 경로를 companies.json 에서 읽음(literal 은 read 실패 시 폴백만).
+const TRIPLAN_ROOT = resolveProjectRoot('triplan') ?? '/Users/soo/workspace/source-code/triplan';
+const BUEONGI_ROOT = resolveProjectRoot('bueongi') ?? '/Users/soo/workspace/source-code/apps/bueongi';
 const ROLE_DOC_PATHS: Record<string, string[]> = {
   pm: ['.claude/memories/consensus.md', '.claude/memories/handoff.md'],
   backend: ['triplan-travel-service/docs', 'soo-auth-service/docs', 'triplan-travel-service/BACKLOG.md'],
@@ -49,6 +52,22 @@ const BASELINE_AGENTS: { roleId: string; name: string; repos: string[]; reportDi
   { roleId: 'orchestrator', name: '오케스트레이터 (조율)', repos: ['triplan-travel-service', 'triplan-frontend', 'soo-auth-service'], reportDirs: ['orchestrator'] },
 ];
 
+// 정합성 C2-b — bueongi 전용 에이전트(이전엔 triplan BASELINE 하드코딩이라 화면에서 누락).
+//   roleId 는 agents.json 의 라이브 id(bueongi-backend/bueongi-dev)와 일치시켜 상태 오버레이가 붙게.
+//   ★canonical agentMappings 가 qa/qa-reviewer 등 의미중복이라 단순 순회가 불가 → 프로젝트별
+//   canonical 정의를 명시(이게 단일 소스). cron 8개는 hermes 별 시스템이라 미포함(별도 통합).
+const BUEONGI_AGENTS: { roleId: string; name: string; repos: string[]; reportDirs: string[] }[] = [
+  { roleId: 'bueongi-backend', name: '백엔드 개발자 (부엉이)', repos: ['backend'], reportDirs: ['bueongi-backend', 'backend'] },
+  { roleId: 'bueongi-dev', name: '프론트엔드 개발자 (부엉이)', repos: ['frontend-src'], reportDirs: ['bueongi-dev', 'frontend'] },
+];
+
+// 프로젝트별 canonical 에이전트 세트(하드코딩 단일 BASELINE → 프로젝트 순회). 각 프로젝트의
+// root/agents/docPaths 를 명시. triplan 은 기존 상세 매핑 그대로(회귀 0), bueongi 추가.
+const PROJECTS: { projectId: string; root: string; agents: typeof BASELINE_AGENTS; docPaths: Record<string, string[]> }[] = [
+  { projectId: 'triplan', root: TRIPLAN_ROOT, agents: BASELINE_AGENTS, docPaths: ROLE_DOC_PATHS },
+  { projectId: 'bueongi', root: BUEONGI_ROOT, agents: BUEONGI_AGENTS, docPaths: {} },
+];
+
 function safeReadJson<T = unknown>(p: string): T | null {
   try { return JSON.parse(fs.readFileSync(p, 'utf-8')) as T; } catch { return null; }
 }
@@ -58,9 +77,9 @@ function safeReadFile(p: string): string | null {
 
 interface DocEntry { path: string; relPath: string; mtime: string; sizeBytes: number; }
 
-function listReports(role: string): DocEntry[] {
+function listReports(role: string, root: string): DocEntry[] {
   const baseRel = `.claude/reports/${role}`;
-  const baseAbs = path.join(TRIPLAN_ROOT, baseRel);
+  const baseAbs = path.join(root, baseRel);
   const out: DocEntry[] = [];
   try {
     if (!fs.existsSync(baseAbs)) return out;
@@ -84,10 +103,10 @@ function listReports(role: string): DocEntry[] {
   return out.slice(0, 10);
 }
 
-function listDocs(role: string): DocEntry[] {
+function listDocs(role: string, root: string, docPaths: Record<string, string[]>): DocEntry[] {
   const out: DocEntry[] = [];
-  for (const rel of ROLE_DOC_PATHS[role] ?? []) {
-    const abs = path.join(TRIPLAN_ROOT, rel);
+  for (const rel of docPaths[role] ?? []) {
+    const abs = path.join(root, rel);
     try {
       const st = fs.statSync(abs);
       if (st.isFile()) out.push({ path: abs, relPath: rel, mtime: st.mtime.toISOString(), sizeBytes: st.size });
@@ -108,8 +127,8 @@ function listDocs(role: string): DocEntry[] {
   return out.slice(0, 12);
 }
 
-function recentCommits(repo: string, hours = 24) {
-  const repoPath = path.join(TRIPLAN_ROOT, repo);
+function recentCommits(repo: string, root: string, hours = 24) {
+  const repoPath = path.join(root, repo);
   try {
     const out = execSync(`git -C "${repoPath}" log --since="${hours} hours ago" --pretty=format:"%h%x09%cI%x09%s" -n 30`, { encoding: 'utf-8', timeout: 4000 });
     return out.split('\n').filter(Boolean).map((line) => {
@@ -166,19 +185,20 @@ export async function GET() {
       }
     } catch { /* electron 미응답 시 디스크 값으로 폴백 */ }
 
-    const agents = BASELINE_AGENTS.map((m) => {
+    // C2-b — 프로젝트(triplan·bueongi) 순회로 에이전트 집계(이전엔 triplan BASELINE 단일).
+    const agents = PROJECTS.flatMap((proj) => proj.agents.map((m) => {
       const live = liveById.get(m.roleId) ?? {};
       const snap = liveSnapByRole.get(m.roleId) ?? {};
-      const docs = listDocs(m.roleId);
-      const reports = m.reportDirs.flatMap(d => listReports(d));
+      const docs = listDocs(m.roleId, proj.root, proj.docPaths);
+      const reports = m.reportDirs.flatMap(d => listReports(d, proj.root));
       const commits: Array<{ sha: string; subject: string; date: string; repo: string }> = [];
-      for (const r of m.repos) commits.push(...recentCommits(r, 24));
+      for (const r of m.repos) commits.push(...recentCommits(r, proj.root, 24));
       commits.sort((a, b) => b.date.localeCompare(a.date));
       const diskTail = (live.output ?? []).slice(-8).join('\n').replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').slice(-1500);
       const tail = (snap.outputPreview ? snap.outputPreview.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').slice(-1500) : diskTail);
       const provider = live.provider as string | undefined;
       return {
-        agentId: m.roleId, roleId: m.roleId, name: m.name,
+        agentId: m.roleId, roleId: m.roleId, name: m.name, projectId: proj.projectId,
         engine: provider === 'claude' ? 'claude' : provider === 'codex' ? 'codex' : null,
         subProjectId: null,
         status: snap.status ?? live.status ?? 'unknown',
@@ -187,7 +207,7 @@ export async function GET() {
         statusLine: live.statusLine ?? null,
         outputTail: tail, recentCommits: commits.slice(0, 6), reports, docs,
       };
-    });
+    }));
 
     return NextResponse.json({ updatedAt: new Date().toISOString(), cycles, agents });
   } catch (err) {

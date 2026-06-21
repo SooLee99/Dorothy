@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { X, FolderOpen, Plus, Minus, Sparkles, Wand2, ListTodo, Loader2, Paperclip, FileImage, FileText, File, Star } from 'lucide-react';
 import type { KanbanTaskCreate, TaskAttachment } from '@/types/kanban';
 import { isElectron } from '@/hooks/useElectron';
+import { useProjectScope } from '@/lib/useProjectScope'; // 하드코딩 제거 ① — 생성 시 canonical projectId
 
 interface NewTaskModalProps {
   onClose: () => void;
@@ -54,6 +55,7 @@ export function NewTaskModal({ onClose, onCreate, initialProjectPath }: NewTaskM
 
   // Quick mode state
   const [quickPrompt, setQuickPrompt] = useState('');
+  const [quickProjectPath, setQuickProjectPath] = useState(initialProjectPath || ''); // Quick 에서도 프로젝트 직접 선택
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedTask, setGeneratedTask] = useState<{
     title: string;
@@ -78,6 +80,10 @@ export function NewTaskModal({ onClose, onCreate, initialProjectPath }: NewTaskM
   const [selectedProjectPath, setSelectedProjectPath] = useState(initialProjectPath || '');
   const [projects, setProjects] = useState<Project[]>([]);
   const [favoriteProjects, setFavoriteProjects] = useState<string[]>([]);
+  // 하드코딩 제거 ① — projectPath → capsule canonical projectId. 매칭 없으면 기존 폴백(path-replace).
+  const { resolveProjectId } = useProjectScope();
+  const canonicalProjectId = (projectPath: string): string =>
+    resolveProjectId({ projectPath }) ?? projectPath.replace(/[^a-zA-Z0-9]/g, '-');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Load projects + favorites + hidden + default project
@@ -106,12 +112,17 @@ export function NewTaskModal({ onClose, onCreate, initialProjectPath }: NewTaskM
         setProjects(visibleProjects);
 
         // initialProjectPath(프로젝트 상세보기에서 prefill)가 있으면 그것 우선 — default 덮어쓰지 않음.
+        let initialSel = '';
         if (initialProjectPath) {
-          setSelectedProjectPath(initialProjectPath);
+          initialSel = initialProjectPath;
         } else if (settings?.defaultProjectPath && visibleProjects.some((p: Project) => p.path === settings.defaultProjectPath)) {
-          setSelectedProjectPath(settings.defaultProjectPath);
+          initialSel = settings.defaultProjectPath;
         } else if (visibleProjects.length > 0) {
-          setSelectedProjectPath(visibleProjects[0].path);
+          initialSel = visibleProjects[0].path;
+        }
+        if (initialSel) {
+          setSelectedProjectPath(initialSel);
+          setQuickProjectPath(initialSel); // Quick 탭도 동일 기본값으로 초기화
         }
       }
     };
@@ -187,14 +198,15 @@ export function NewTaskModal({ onClose, onCreate, initialProjectPath }: NewTaskM
       });
 
       if (data.success && data.task) {
-        setGeneratedTask(data.task);
+        // Quick 에서 사용자가 고른 프로젝트가 있으면 AI 추정보다 우선.
+        setGeneratedTask({ ...data.task, projectPath: quickProjectPath || data.task.projectPath });
       } else {
         // Fallback: create basic task from prompt
         const firstLine = quickPrompt.split('\n')[0].slice(0, 100);
         setGeneratedTask({
           title: firstLine,
           description: quickPrompt,
-          projectPath: projects[0]?.path || '',
+          projectPath: quickProjectPath || projects[0]?.path || '',
           priority: 'medium',
           labels: [],
           requiredSkills: [],
@@ -206,7 +218,7 @@ export function NewTaskModal({ onClose, onCreate, initialProjectPath }: NewTaskM
       setGeneratedTask({
         title: firstLine,
         description: quickPrompt,
-        projectPath: projects[0]?.path || '',
+        projectPath: quickProjectPath || projects[0]?.path || '',
         priority: 'medium',
         labels: [],
         requiredSkills: [],
@@ -221,7 +233,7 @@ export function NewTaskModal({ onClose, onCreate, initialProjectPath }: NewTaskM
 
     setIsSubmitting(true);
     try {
-      const projectId = generatedTask.projectPath.replace(/[^a-zA-Z0-9]/g, '-');
+      const projectId = canonicalProjectId(generatedTask.projectPath);
       await onCreate({
         title: generatedTask.title,
         description: generatedTask.description,
@@ -247,7 +259,7 @@ export function NewTaskModal({ onClose, onCreate, initialProjectPath }: NewTaskM
     setIsSubmitting(true);
 
     try {
-      const projectId = selectedProjectPath.replace(/[^a-zA-Z0-9]/g, '-');
+      const projectId = canonicalProjectId(selectedProjectPath);
 
       await onCreate({
         title: title.trim(),
@@ -330,6 +342,64 @@ export function NewTaskModal({ onClose, onCreate, initialProjectPath }: NewTaskM
                   className="w-full px-3 py-2 bg-secondary border border-border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary resize-none"
                   autoFocus
                 />
+              </div>
+
+              {/* Project (Quick 에서도 직접 선택 — 비우면 AI가 추정) */}
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  Project <span className="text-xs text-muted-foreground font-normal">(선택 — 비우면 AI 추정)</span>
+                </label>
+
+                {/* Favorite project quick-select badges */}
+                {favoriteProjects.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {projects
+                      .filter((p) => isFavoriteProject(p.path))
+                      .map((p) => (
+                        <button
+                          key={p.path}
+                          type="button"
+                          onClick={() => setQuickProjectPath(p.path)}
+                          className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md border transition-colors ${
+                            quickProjectPath === p.path
+                              ? 'border-yellow-500/50 bg-yellow-500/10 text-yellow-300'
+                              : 'border-border bg-secondary text-muted-foreground hover:text-foreground hover:border-yellow-500/30'
+                          }`}
+                        >
+                          <Star className="w-3 h-3 text-yellow-400 fill-current" />
+                          {p.name}
+                        </button>
+                      ))}
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <select
+                    value={quickProjectPath}
+                    onChange={(e) => setQuickProjectPath(e.target.value)}
+                    className="flex-1 px-3 py-2 bg-secondary border border-border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="">자동 (AI 추정)</option>
+                    {projects.map((p) => (
+                      <option key={p.path} value={p.path}>
+                        {isFavoriteProject(p.path) ? `⭐ ${p.name}` : p.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (isElectron() && window.electronAPI?.dialog?.openFolder) {
+                        const path = await window.electronAPI.dialog.openFolder();
+                        if (path) setQuickProjectPath(path);
+                      }
+                    }}
+                    className="px-3 py-2 bg-secondary border border-border rounded-md hover:bg-secondary/80 transition-colors"
+                    title="Browse folders"
+                  >
+                    <FolderOpen className="w-4 h-4 text-muted-foreground" />
+                  </button>
+                </div>
               </div>
 
               {/* Attachments Section */}

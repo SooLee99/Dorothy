@@ -1,9 +1,14 @@
 import { ipcMain, BrowserWindow } from 'electron';
-import * as fs from 'fs';
-import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import { KANBAN_FILE, DATA_DIR } from '../constants';
 import { generateTaskFromPrompt } from '../utils/kanban-generate';
+// ★단일 소스: 칸반 데이터는 hermes SQLite(~/.hermes/kanban.db) 에 산다. load/save 는 store 로 위임.
+import {
+  loadTasks,
+  saveTasks,
+  type KanbanTask,
+  type KanbanColumn,
+  type TaskAttachment,
+} from '../services/kanban-store';
 // MVP Phase 3 / 4.5 — opportunistic Plan/Run mirror + Plan-aware routing.
 // Best-effort: every call below is wrapped so a failure here cannot break
 // the legacy auto-spawn flow.
@@ -15,36 +20,7 @@ import { selectAgentForOwnerRole, type LiveAgentSlim } from '../services/dorothy
 // Kanban Board IPC handlers
 // ============================================
 
-// Types matching frontend
-type KanbanColumn = 'backlog' | 'planned' | 'ongoing' | 'done';
-
-interface TaskAttachment {
-  path: string;
-  name: string;
-  type: 'image' | 'pdf' | 'document' | 'other';
-  size?: number;
-}
-
-interface KanbanTask {
-  id: string;
-  title: string;
-  description: string;
-  column: KanbanColumn;
-  projectId: string;
-  projectPath: string;
-  assignedAgentId: string | null;
-  agentCreatedForTask: boolean;
-  requiredSkills: string[];
-  priority: 'low' | 'medium' | 'high';
-  progress: number;
-  createdAt: string;
-  updatedAt: string;
-  completedAt?: string;
-  order: number;
-  labels: string[];
-  completionSummary?: string;
-  attachments: TaskAttachment[];
-}
+// KanbanColumn / TaskAttachment / KanbanTask 는 ../services/kanban-store 에서 import (단일 소스).
 
 interface KanbanTaskCreate {
   title: string;
@@ -87,30 +63,6 @@ export interface KanbanHandlerDependencies {
 }
 
 let deps: KanbanHandlerDependencies | null = null;
-
-function ensureDir(): void {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-}
-
-function loadTasks(): KanbanTask[] {
-  ensureDir();
-  if (!fs.existsSync(KANBAN_FILE)) {
-    return [];
-  }
-  try {
-    const data = fs.readFileSync(KANBAN_FILE, 'utf-8');
-    return JSON.parse(data);
-  } catch {
-    return [];
-  }
-}
-
-function saveTasks(tasks: KanbanTask[]): void {
-  ensureDir();
-  fs.writeFileSync(KANBAN_FILE, JSON.stringify(tasks, null, 2));
-}
 
 function emitTaskEvent(eventName: string, task: KanbanTask): void {
   deps?.getMainWindow()?.webContents.send(eventName, task);

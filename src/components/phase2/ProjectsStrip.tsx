@@ -7,7 +7,8 @@
  * ★조인 불가(repos 부재) → "매핑 확인 불가" 안내(거짓 필터 금지).
  */
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { ProjectCard, type ProjectCardData } from './ProjectCard';
+import { ProjectCard, type ProjectCardData, type ServiceRole, type ServiceAction } from './ProjectCard';
+import { ServiceActionModal, type ServiceControlResult } from './ServiceActionModal';
 
 export function ProjectsStrip({
   selectedId,
@@ -20,6 +21,11 @@ export function ProjectsStrip({
 }) {
   const [projects, setProjects] = useState<ProjectCardData[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState<Set<string>>(new Set());
+  // 결과 팝업: 클릭 시 열려 어떻게 됐는지(메시지·로그·라이브 상태)를 보여준다.
+  const [modal, setModal] = useState<{ projectId: string; role: ServiceRole; action: ServiceAction } | null>(null);
+  const [modalResult, setModalResult] = useState<ServiceControlResult | null>(null);
+  const [modalPending, setModalPending] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -48,6 +54,31 @@ export function ProjectsStrip({
     (projects ?? []).forEach((p) => (p.repos ?? []).forEach((r) => cnt.set(r, (cnt.get(r) ?? 0) + 1)));
     return new Set([...cnt.entries()].filter(([, n]) => n > 1).map(([r]) => r));
   }, [projects]);
+
+  // 서비스 start/stop(★제어). 팝업을 열어 진행/결과/로그를 보여주고, 끝나면 즉시 재조회로 점 갱신.
+  const handleServiceAction = useCallback(async (projectId: string, role: ServiceRole, action: ServiceAction) => {
+    const key = `${projectId}:${role}`;
+    setModal({ projectId, role, action });
+    setModalResult(null);
+    setModalPending(true);
+    setPending((prev) => new Set(prev).add(key));
+    try {
+      // 끝 슬래시: next.config trailingSlash:true 의 308 왕복 회피(POST body 재전송 방지).
+      const res = await fetch(`/api/dorothy/projects/${encodeURIComponent(projectId)}/service/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role, action }),
+      });
+      const j = await res.json().catch(() => null);
+      setModalResult(j && typeof j.message === 'string' ? j : { ok: res.ok, message: res.ok ? '완료' : `실패(${res.status})` });
+    } catch {
+      setModalResult({ ok: false, message: '요청 실패(네트워크)' });
+    } finally {
+      setModalPending(false);
+      setPending((prev) => { const n = new Set(prev); n.delete(key); return n; });
+      load(); // start 직후엔 아직 바인딩 전일 수 있음 → 폴링이 곧 따라잡음
+    }
+  }, [load]);
 
   const handlePick = useCallback((p: ProjectCardData | null) => {
     if (!p) return onSelect(null);
@@ -82,10 +113,34 @@ export function ProjectsStrip({
         <div className="flex gap-3 overflow-x-auto pb-1">
           {projects.map((p) => (
             <div key={p.projectId} className="w-72 shrink-0">
-              <ProjectCard project={p} selected={p.projectId === selectedId} onSelect={handlePick} />
+              <ProjectCard
+                project={p}
+                selected={p.projectId === selectedId}
+                onSelect={handlePick}
+                onServiceAction={handleServiceAction}
+                pendingRoles={pending}
+              />
             </div>
           ))}
         </div>
+      )}
+
+      {modal && (
+        <ServiceActionModal
+          key={`${modal.projectId}:${modal.role}:${modal.action}`}
+          open={!!modal}
+          projectId={modal.projectId}
+          projectName={projects?.find((p) => p.projectId === modal.projectId)?.name}
+          role={modal.role}
+          action={modal.action}
+          result={modalResult}
+          pending={modalPending}
+          probe={(() => {
+            const p = projects?.find((x) => x.projectId === modal.projectId);
+            return modal.role === 'fe' ? p?.fe : p?.be;
+          })()}
+          onClose={() => setModal(null)}
+        />
       )}
 
       {joinUnavailable && (

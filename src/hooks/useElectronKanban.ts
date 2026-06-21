@@ -4,6 +4,21 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import type { KanbanTask, KanbanColumn, KanbanTaskCreate, KanbanTaskUpdate, KanbanMoveResult } from '@/types/kanban';
 import { isElectron } from './useElectron';
 
+// 칸반 자동 반영 폴링 간격(ms). 외부 편집(파일/DB·다른 에이전트)을 이 주기로 흡수.
+const KANBAN_POLL_MS = 8000;
+
+// 표시에 영향을 주는 필드만 비교 — 같으면 state 교체를 건너뛴다(리렌더·드래그 방해 방지).
+function sameTasks(a: KanbanTask[], b: KanbanTask[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  const key = (t: KanbanTask) =>
+    `${t.id}|${t.column}|${t.order}|${t.title}|${t.description}|${t.priority}|${t.progress}|${t.assignedAgentId ?? ''}|${(t.labels || []).join(',')}|${t.completionSummary ?? ''}`;
+  // order 무관 비교를 위해 id 기준 정렬 후 직렬화
+  const sa = a.map(key).sort().join('\n');
+  const sb = b.map(key).sort().join('\n');
+  return sa === sb;
+}
+
 /**
  * Hook for Kanban board management via Electron IPC
  */
@@ -12,16 +27,22 @@ export function useElectronKanban() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // ★자동 반영(폴링)용 — 외부(파일/DB 직접 편집·다른 에이전트)에 의한 변경을 주기적으로 흡수.
+  //   변경이 있을 때만 state 를 교체해 불필요한 리렌더·드래그 방해를 막는다(아래 sameTasks).
+  const setTasksIfChanged = useCallback((next: KanbanTask[]) => {
+    setTasks(prev => (sameTasks(prev, next) ? prev : next));
+  }, []);
+
   // Fetch all tasks
   const fetchTasks = useCallback(async () => {
     if (!isElectron() || !window.electronAPI?.kanban) {
-      // Web fallback: read-only display of ~/.dorothy/kanban-tasks.json via API route.
+      // Web fallback: read-only display via API route(:3500 → hermes DB).
       try {
         const res = await fetch('/api/dorothy/kanban');
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data)) {
-            setTasks(data as KanbanTask[]);
+            setTasksIfChanged(data as KanbanTask[]);
             setError(null);
           }
         }
@@ -37,7 +58,7 @@ export function useElectronKanban() {
       if (result.error) {
         setError(result.error);
       } else {
-        setTasks(result.tasks as KanbanTask[]);
+        setTasksIfChanged(result.tasks as KanbanTask[]);
         setError(null);
       }
     } catch (err) {
@@ -46,7 +67,7 @@ export function useElectronKanban() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [setTasksIfChanged]);
 
   // Create a new task
   // Note: State is updated via onTaskCreated event to avoid duplicates
@@ -151,6 +172,28 @@ export function useElectronKanban() {
   // Initial fetch
   useEffect(() => {
     fetchTasks();
+  }, [fetchTasks]);
+
+  // ★자동 반영: 주기적 폴링 + 탭 포커스/가시화 시 즉시 갱신.
+  //   변경이 있을 때만 state 교체(sameTasks)라 외부 편집(파일/DB·다른 에이전트)이 자동 반영된다.
+  //   숨겨진 탭에서는 폴링을 건너뛰어 낭비를 줄인다.
+  useEffect(() => {
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      fetchTasks();
+    };
+    const interval = setInterval(tick, KANBAN_POLL_MS);
+    const onFocus = () => fetchTasks();
+    const onVisible = () => {
+      if (typeof document !== 'undefined' && !document.hidden) fetchTasks();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [fetchTasks]);
 
   return {

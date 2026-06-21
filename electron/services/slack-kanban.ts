@@ -11,11 +11,10 @@
 //   - ★적용 전 확인(reply 기반): 오파싱 대비 사람이 "네/아니요"로 승인해야 실제 create.
 //   - 빈 채널/대화 채널 생성 안 함. dispatch 코드 불변.
 import { spawn } from 'child_process';
-import * as fs from 'fs';
-import { v4 as uuidv4 } from 'uuid';
-import { KANBAN_FILE, DATA_DIR } from '../constants';
+import { DATA_DIR } from '../constants';
 import { AppSettings } from '../types';
 import { resolveClaudeBinaryPath } from '../core/claude-binary-resolver';
+import { createTask } from './kanban-store';
 
 // 알려진 프로젝트 이름 → 경로 매핑(기존 kanban-tasks.json 분포 기준). 모호하면 triplan 기본.
 const PROJECT_MAP: Record<string, { id: string; path: string }> = {
@@ -141,45 +140,22 @@ async function parseKanbanIntent(text: string): Promise<KanbanIntent | null> {
   }
 }
 
-// ── 칸반 직접 create(IPC 우회, kanban-handlers 의 create 로직 미러) ──
-//   export — 슬랙 "task" 명령(slack-bot handleSlackCommand)에서도 재사용.
+// ── 칸반 직접 create — ★단일 소스(hermes SQLite) store.createTask 로 위임 ──
+//   export — 슬랙 "task" 명령(slack-bot handleSlackCommand)에서도 재사용. labels=['slack'] 부여.
 export function createTaskDirect(params: {
   title: string;
   description: string;
   projectId: string;
   projectPath: string;
 }): { id: string; title: string } {
-  let tasks: Array<Record<string, unknown>> = [];
-  try {
-    if (fs.existsSync(KANBAN_FILE)) tasks = JSON.parse(fs.readFileSync(KANBAN_FILE, 'utf-8'));
-  } catch {
-    tasks = [];
-  }
-  const backlog = tasks.filter(t => t.column === 'backlog');
-  const maxOrder = backlog.length > 0 ? Math.max(...backlog.map(t => (t.order as number) ?? 0)) : -1;
-  const now = new Date().toISOString();
-  const newTask: Record<string, unknown> = {
-    id: uuidv4(),
+  const task = createTask({
     title: params.title,
     description: params.description,
-    column: 'backlog',
     projectId: params.projectId,
     projectPath: params.projectPath,
-    assignedAgentId: null,
-    agentCreatedForTask: false,
-    requiredSkills: [],
-    priority: 'medium',
-    progress: 0,
-    createdAt: now,
-    updatedAt: now,
-    order: maxOrder + 1,
     labels: ['slack'],
-    attachments: [],
-  };
-  tasks.push(newTask);
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(KANBAN_FILE, JSON.stringify(tasks, null, 2));
-  return { id: newTask.id as string, title: params.title };
+  });
+  return { id: task.id, title: task.title };
 }
 
 /**

@@ -1,9 +1,11 @@
 import AgentWorkflowDiagrams from '@/components/AgentWorkflowDiagrams';
 import LiveAgentProgress from '@/components/AgentWorkflowDiagrams/LiveAgentProgress';
+import DomainTabs, { AGENT_DOMAIN } from '@/components/DomainTabs';
 
 export default function AgentWorkflowsPage() {
   return (
     <div className="pt-4 lg:pt-6">
+      <DomainTabs tabs={AGENT_DOMAIN} title="에이전트" bare />
       {/* Phase 6-AN+ — 에이전트별 현재 진행 단계(라이브) + 실제 소통 피드 */}
       <LiveAgentProgress />
       {/* 정적 워크플로우 다이어그램(역할↔단계 매핑) */}

@@ -25,17 +25,12 @@ import {
   ShieldCheck,
   Network,
   Building2,
-  Users,
-  PlayCircle,
   TerminalSquare,
   GitPullRequest,
-  FileText,
-  Lightbulb,
   Stethoscope,
-  Layers,
   Factory,
   Plug,
-  FlaskConical,
+  Inbox,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { LATEST_RELEASE, WHATS_NEW_STORAGE_KEY } from '@/data/changelog';
@@ -47,56 +42,54 @@ const PalletTownIcon = ({ className }: { className?: string }) => (
 import { useStore } from '@/store';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import ProjectSwitcher from './ProjectSwitcher';
 
 // Phase 6-AL — 기능/경로 삭제 없이 그룹·순서·라벨만 정리(기본/운영/고급).
 type NavIcon = React.ComponentType<{ className?: string }>;
 type NavEntry =
   | { section: string }
-  | { href: string; icon: NavIcon; label: string; shortcut?: string };
+  | { href: string; icon: NavIcon; label: string; shortcut?: string; match?: string[] };
 
 const navItems: NavEntry[] = [
-  // #3 메뉴 재분리: 과적된 '고급/진단'(12)을 분할 — 4그룹 → 6그룹(경로 삭제 0·라벨/href/단축키/아이콘 그대로, 그룹 소속만 변경).
-  { section: '자동개발' },
+  // 재설계 ①단계 — 빈도 순 정렬(자주 쓰는 것 위로). 경로 삭제 0·라벨/href/단축키/아이콘 그대로,
+  //   그룹 소속·순서만 변경(이전 '#3 메뉴 재분리' 커밋과 동일 방식). 프로젝트별 필터는 상단 ProjectSwitcher.
+  // 재설계 ②-b — 비슷한 화면을 도메인으로 묶음(한 화면=한 도메인·탭). 라우트 삭제 0:
+  //   보조 라우트(agent-activity·agent-workflows·test-results·reports·runs·improvements·
+  //   skill-candidates)는 nav 에선 빠지지만 ★도메인 탭(DomainTabs)+직접 URL 로 그대로 도달.
+  //   match[] = 그 도메인 탭에 있을 때도 nav 항목이 active 로 보이게.
+  { section: '프로젝트 작업' },
   { href: '/', icon: LayoutDashboard, label: '대시보드', shortcut: '1' },
   { href: '/projects', icon: FolderKanban, label: '프로젝트', shortcut: '5' },
+  { href: '/flow', icon: Workflow, label: '프로젝트 흐름' },
   { href: '/kanban', icon: Columns, label: '칸반', shortcut: '3' },
   { href: '/sessions', icon: TerminalSquare, label: '에이전트 터미널' },
+  { href: '/agents', icon: Bot, label: '에이전트', shortcut: '2', match: ['/agent-activity', '/agent-workflows'] },
+  { href: '/action-items', icon: Inbox, label: '사용자 조치' },
+  { href: '/approvals', icon: ShieldCheck, label: '승인 대기' },
+
+  { section: '산출물·모니터링' },
+  { href: '/pr', icon: GitPullRequest, label: '실행·산출물', match: ['/test-results', '/reports', '/runs'] },
   { href: '/monitoring', icon: Activity, label: '모니터링' },
   { href: '/app-factory', icon: Factory, label: '앱 팩토리' },
 
-  { section: '에이전트·협업' },
-  { href: '/agents', icon: Bot, label: '에이전트', shortcut: '2' },
-  { href: '/agent-activity', icon: Users, label: '에이전트 작업' },
-  { href: '/agent-workflows', icon: Workflow, label: '에이전트 워크플로우' },
-  { href: '/companies', icon: Building2, label: '회사' },
-  { href: '/approvals', icon: ShieldCheck, label: '승인 대기' },
+  { section: '품질·개선' },
+  { href: '/diagnostics', icon: Stethoscope, label: '품질·개선', match: ['/improvements', '/skill-candidates'] },
 
-  // ③ 산출물(모니터링) — 2번(모니터링 분리)의 토대.
-  { section: '산출물' },
-  { href: '/reports', icon: FileText, label: '리포트' },
-  { href: '/pr', icon: GitPullRequest, label: '풀 리퀘스트' },
-  { href: '/runs', icon: PlayCircle, label: '실행 기록' },
-  { href: '/test-results', icon: FlaskConical, label: 'E2E 테스트' },
-
-  { section: '연동·자동화' },
+  { section: '전역 (프로젝트 무관)' },
+  { href: '/usage', icon: BarChart2, label: '사용량', shortcut: '0' },
+  { href: '/skills', icon: Sparkles, label: '스킬', shortcut: '6' },
+  { href: '/plugins', icon: Puzzle, label: '플러그인', shortcut: '7' },
+  { href: '/memory', icon: Brain, label: '메모리', shortcut: 'M' },
+  { href: '/vault', icon: Archive, label: '볼트', shortcut: '4' },
   { href: '/automations', icon: Zap, label: '자동화', shortcut: '9' },
   { href: '/recurring-tasks', icon: CalendarClock, label: '스케줄', shortcut: '8' },
+  { href: '/companies', icon: Building2, label: '회사' },
   { href: '/auto-company', icon: Workflow, label: '오토컴퍼니' },
   { href: '/templates', icon: Sparkles, label: '템플릿', shortcut: 'T' },
   { href: '/integrations/github', icon: Plug, label: '연동 설정' },
-
-  { section: '진단·개선' },
-  { href: '/diagnostics', icon: Stethoscope, label: '진단' },
-  { href: '/improvements', icon: Lightbulb, label: '개선' },
-  { href: '/skill-candidates', icon: Layers, label: '스킬 후보' },
-  { href: '/usage', icon: BarChart2, label: '사용량', shortcut: '0' },
   { href: '/harness', icon: Network, label: '하네스' },
 
-  { section: '지식·확장' },
-  { href: '/vault', icon: Archive, label: '볼트', shortcut: '4' },
-  { href: '/memory', icon: Brain, label: '메모리', shortcut: 'M' },
-  { href: '/skills', icon: Sparkles, label: '스킬', shortcut: '6' },
-  { href: '/plugins', icon: Puzzle, label: '플러그인', shortcut: '7' },
+  { section: '실험·기타' },
   { href: '/pallet-town', icon: PalletTownIcon, label: '클로드몬' },
 ];
 
@@ -159,6 +152,9 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
           </div>
         </div>
 
+        {/* 재설계 ①단계 — 전역 프로젝트 스위처(프로젝트별 자동 필터의 입력) */}
+        <ProjectSwitcher collapsed={!showLabels} />
+
         {/* Navigation */}
         <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
           {navItems.map((item, idx) => {
@@ -173,7 +169,8 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
             }
             const isActive = item.href === '/'
               ? pathname === '/'
-              : pathname === item.href || pathname.startsWith(`${item.href}/`);
+              : pathname === item.href || pathname.startsWith(`${item.href}/`)
+                || (item.match?.some((m) => pathname === m || pathname.startsWith(`${m}/`)) ?? false);
             return (
               <Link
                 key={item.href}
@@ -338,6 +335,9 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
               <img src="/text.png" alt="Dorothy" className="h-6 w-auto object-contain" />
             </div>
           </div>
+
+          {/* 재설계 ①단계 — 전역 프로젝트 스위처(모바일) */}
+          <ProjectSwitcher collapsed={false} />
 
           {/* Navigation */}
           <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">

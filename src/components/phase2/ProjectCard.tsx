@@ -6,7 +6,7 @@
  */
 import { Server, Monitor, GitBranch } from 'lucide-react';
 import { formatRelative } from '@/components/RunCommon/badges';
-import { probeView, gitView, TONE_CLASS, type ProbeLike, type GitLike } from './lib';
+import { probeView, gitView, type ProbeLike, type GitLike } from './lib';
 
 export interface ProjectCardData {
   projectId: string;
@@ -18,7 +18,36 @@ export interface ProjectCardData {
   git?: GitLike;
 }
 
-function ProbeRow({ icon, label, probe }: { icon: React.ReactNode; label: string; probe?: ProbeLike }) {
+export type ServiceRole = 'fe' | 'be';
+export type ServiceAction = 'start' | 'stop';
+
+/** 카드 외곽이 <button> 이라 중첩 방지: 컨트롤은 role="button" span + stopPropagation. */
+function ServiceControl({ up, pending, onAct }: { up: boolean; pending: boolean; onAct: (a: ServiceAction) => void }) {
+  const action: ServiceAction = up ? 'stop' : 'start';
+  const handle = (e: React.MouseEvent | React.KeyboardEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!pending) onAct(action);
+  };
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      aria-disabled={pending}
+      onClick={handle}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handle(e); }}
+      className={`ml-auto text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+        pending ? 'opacity-50 cursor-default border-border text-muted-foreground'
+        : up ? 'border-rose-400/50 text-rose-500 hover:bg-rose-500/10'
+             : 'border-emerald-500/50 text-emerald-600 hover:bg-emerald-500/10'
+      }`}
+    >
+      {pending ? '…' : up ? '정지' : '기동'}
+    </span>
+  );
+}
+
+function ProbeRow({ icon, label, probe, control }: { icon: React.ReactNode; label: string; probe?: ProbeLike; control?: React.ReactNode }) {
   const v = probeView(probe);
   const dot = v.tone === 'success' ? 'bg-emerald-500' : v.tone === 'danger' ? 'bg-rose-500' : 'bg-muted-foreground/40';
   return (
@@ -26,12 +55,30 @@ function ProbeRow({ icon, label, probe }: { icon: React.ReactNode; label: string
       <span className="text-muted-foreground flex items-center gap-1 w-10">{icon}{label}</span>
       <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
       <span className={v.tone === 'unknown' ? 'text-muted-foreground' : ''}>{v.text}</span>
+      {control}
     </div>
   );
 }
 
-export function ProjectCard({ project, onSelect, selected = false }: { project: ProjectCardData; onSelect?: (project: ProjectCardData) => void; selected?: boolean }) {
+export function ProjectCard({ project, onSelect, selected = false, onServiceAction, pendingRoles }: {
+  project: ProjectCardData;
+  onSelect?: (project: ProjectCardData) => void;
+  selected?: boolean;
+  onServiceAction?: (projectId: string, role: ServiceRole, action: ServiceAction) => void;
+  pendingRoles?: Set<string>; // `${projectId}:${role}` 진행중
+}) {
   const g = gitView(project.git);
+  const ctrl = (role: ServiceRole, probe?: ProbeLike) => {
+    if (!onServiceAction) return undefined;
+    const up = probeView(probe).tone === 'success';
+    return (
+      <ServiceControl
+        up={up}
+        pending={!!pendingRoles?.has(`${project.projectId}:${role}`)}
+        onAct={(a) => onServiceAction(project.projectId, role, a)}
+      />
+    );
+  };
   return (
     <button
       type="button"
@@ -49,8 +96,8 @@ export function ProjectCard({ project, onSelect, selected = false }: { project: 
       </div>
 
       <div className="space-y-1.5">
-        <ProbeRow icon={<Monitor className="w-3 h-3" />} label="FE" probe={project.fe} />
-        <ProbeRow icon={<Server className="w-3 h-3" />} label="BE" probe={project.be} />
+        <ProbeRow icon={<Monitor className="w-3 h-3" />} label="FE" probe={project.fe} control={ctrl('fe', project.fe)} />
+        <ProbeRow icon={<Server className="w-3 h-3" />} label="BE" probe={project.be} control={ctrl('be', project.be)} />
       </div>
 
       <div className="pt-2 border-t border-border/50 text-xs">

@@ -170,6 +170,29 @@ function readConfiguredAgents(): ConfiguredAgentRaw[] {
 }
 
 /**
+ * Project root paths from `companies.json` (`projects[].rootPath`). These let a
+ * project keep all of its agent `.md` definitions in a single `<root>/.claude/
+ * agents` folder instead of scattering them under each sub-project's working
+ * dir. Degrades to `[]` on any read/parse error.
+ */
+function readProjectRootPaths(): string[] {
+  try {
+    const file = path.join(DATA_DIR, 'companies.json');
+    if (!fs.existsSync(file)) return [];
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf-8')) as { projects?: unknown };
+    const projects = Array.isArray(parsed?.projects) ? parsed.projects : [];
+    const roots: string[] = [];
+    for (const p of projects) {
+      const rp = p && typeof p === 'object' ? (p as { rootPath?: unknown }).rootPath : undefined;
+      if (typeof rp === 'string' && rp) roots.push(rp);
+    }
+    return roots;
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Extract a short role summary from an agent `.md` file *without* returning the
  * body. Prefers a frontmatter `description:`; falls back to the first non-empty
  * paragraph after the optional frontmatter / first heading. Capped at 240 chars.
@@ -289,6 +312,13 @@ function resolveScanRoots(
     if (a.projectPath) projectPaths.add(a.projectPath);
   }
   for (const p of opts.extraProjectPaths ?? []) projectPaths.add(p);
+  // Also scan each registered project's ROOT `.claude/agents` (companies.json),
+  // so definitions kept in one folder at the project root are discovered too —
+  // not just the ones under each agent's sub-project working dir. Skipped when
+  // `fileAgents` are injected (tests) so the build stays disk-free.
+  if (!opts.fileAgents) {
+    for (const root of readProjectRootPaths()) projectPaths.add(root);
+  }
 
   const projectAgentDirs = Array.from(projectPaths).map(p =>
     path.join(p, '.claude', 'agents'),

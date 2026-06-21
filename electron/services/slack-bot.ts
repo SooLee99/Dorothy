@@ -8,6 +8,8 @@ import { agents, saveAgents, initAgentPty } from '../core/agent-manager';
 import { ptyProcesses, writeProgrammaticInput } from '../core/pty-manager';
 import { getMainWindow } from '../core/window-manager';
 import { handleTasksChannelMessage, createTaskDirect } from './slack-kanban';
+import { getProjectServiceStatus, type ServiceProbe } from './dorothy/service-status';
+import { startService, stopService, type ServiceRole } from './dorothy/service-control';
 import { app } from 'electron';
 
 // Slack bot state
@@ -229,8 +231,12 @@ export async function handleSlackCommand(
         `• \`status\` - Show all agents status\n` +
         `• \`agents\` - List agents with details\n` +
         `• \`projects\` - List all projects\n` +
+        `• \`services\` / \`svc\` - 프로젝트별 백엔드·프론트 서비스 up/down + 헬스\n` +
+        `• \`svc start|stop <project> <fe|be>\` - 서비스 기동/정지 (예: svc start bueongi be)\n` +
         `• \`start <agent> <task>\` - Start an agent\n` +
         `• \`stop <agent>\` - Stop an agent\n` +
+        `• \`loop\` / \`loop status\` - 팀 루프(자동개발) 상태\n` +
+        `• \`loop on|off <project>\` - 팀 루프 재개/정지 (project: triplan|bueongi)\n` +
         `• \`usage\` - Show usage & cost stats\n` +
         `• \`help\` - Show this help message\n\n` +
         `Or just send a message to talk to the Super Agent!`
@@ -538,6 +544,123 @@ export async function handleSlackCommand(
     saveAgents();
 
     await say(`:octagonal_sign: Stopped *${agent.name}*`);
+    return;
+  }
+
+  // 슬랙 서비스 상태판 + 제어: `svc`(상태) / `svc start|stop <project> <fe|be>`(기동·정지).
+  //   상태 프로브는 대시보드 /api/projects 와 같은 공유 로직(같은 진실). 제어는 service-control 모듈.
+  //   ★capsule 정의 프로젝트/경로만 · localhost dev 가정 · 자동 재시작 없음(명시 호출만).
+  if (lowerText === 'services' || lowerText === 'svc' || lowerText === 'service' ||
+      lowerText.startsWith('svc ') || lowerText.startsWith('services ') || lowerText.startsWith('service ')) {
+    const svcParts = lowerText.split(/\s+/);
+    const sub = svcParts[1]; // undefined | 'start' | 'stop' | (그 외=무시)
+
+    // svc start|stop <project> <fe|be>
+    if (sub === 'start' || sub === 'stop') {
+      const proj = svcParts[2];
+      const role = svcParts[3] as ServiceRole | undefined;
+      if (!proj || (role !== 'fe' && role !== 'be')) {
+        await say(`:x: 사용법: \`svc ${sub} <project> <fe|be>\` (예: \`svc start bueongi be\`)`);
+        return;
+      }
+      await say(`:hourglass_flowing_sand: *${proj}* ${role.toUpperCase()} ${sub === 'start' ? '기동' : '정지'} 중…`);
+      try {
+        const r = sub === 'start' ? await startService(proj, role) : await stopService(proj, role);
+        const icon = r.ok ? (sub === 'start' ? ':arrow_forward:' : ':double_vertical_bar:') : ':x:';
+        await say(`${icon} *${proj}* ${role.toUpperCase()}: ${r.message}`);
+      } catch (err) {
+        await say(`:x: 제어 실패: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return;
+    }
+
+    const fmt = (label: string, p: ServiceProbe | null): string => {
+      if (!p) return `${label} :grey_question: 포트 미설정`;
+      if (p.up) {
+        const lat = typeof p.latencyMs === 'number' ? ` ${p.latencyMs}ms` : '';
+        return `${label} :large_green_circle: up (:${p.port}${lat})`;
+      }
+      const why = p.reason === 'probe-timeout' ? 'timeout' : 'unreachable';
+      return `${label} :red_circle: down (:${p.port} · ${why})`;
+    };
+    try {
+      const statuses = await getProjectServiceStatus();
+      if (statuses.length === 0) {
+        await say(':grey_question: 등록된 프로젝트가 없습니다 (project-capsules.json 비어있음).');
+        return;
+      }
+      let resp = ':satellite_antenna: *서비스 상태 (프로젝트별 백엔드·프론트)*\n';
+      for (const s of statuses) {
+        resp += `\n*${s.name}*${s.status ? ` _(${s.status})_` : ''}\n`;
+        resp += `  ${fmt('FE', s.fe)}\n`;
+        resp += `  ${fmt('BE', s.be)}\n`;
+      }
+      resp += '\n_FE=프론트(/) · BE=백엔드(/health) · 127.0.0.1 read-only 프로브_';
+      resp += '\n제어: `svc start|stop <project> <fe|be>` (예: `svc start bueongi be`)';
+      await say(resp);
+    } catch (err) {
+      await say(`:x: 서비스 상태 조회 실패: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return;
+  }
+
+  // 슬랙 사령탑: 팀 루프(자동개발) 제어. 정지/재개는 runtime/<proj>-team-loop.paused 플래그로
+  //   토글한다 — launchd(com.<proj>.teamloop)가 KeepAlive PathState 로 플래그 존재 시 데몬을
+  //   중지, 부재 시 재시작한다(데몬 직접 kill 안 함·되돌리기 쉬움·에이전트 경계서 깨끗).
+  if (lowerText === 'loop' || lowerText.startsWith('loop ')) {
+    const PROJECTS = ['triplan', 'bueongi'];
+    const runtimeDir = path.join(require('os').homedir(), '.dorothy', 'runtime');
+    const flagPath = (p: string) => path.join(runtimeDir, `${p}-team-loop.paused`);
+    const statePath = (p: string) => path.join(runtimeDir, `${p}-team-loop-state.json`);
+    const readState = (p: string): { status?: string; pass?: string; currentRole?: string } | null => {
+      try {
+        return JSON.parse(fs.readFileSync(statePath(p), 'utf8'));
+      } catch {
+        return null;
+      }
+    };
+
+    const parts = lowerText.split(/\s+/);
+    const action = parts[1] || 'status';
+    const target = parts[2];
+
+    if (action === 'status') {
+      let resp = ':satellite_antenna: *Team-loop 상태 (자동개발)*\n';
+      for (const p of PROJECTS) {
+        const paused = fs.existsSync(flagPath(p));
+        const st = readState(p);
+        const live = st
+          ? `${st.status ?? '?'}${st.pass ? ` (pass ${st.pass}${st.currentRole ? ', ' + st.currentRole : ''})` : ''}`
+          : '상태파일 없음';
+        resp += `• *${p}*: ${paused ? ':double_vertical_bar: 정지(paused)' : ':arrow_forward: 가동'} — ${live}\n`;
+      }
+      resp += '\n사용법: `loop on <project>` · `loop off <project>` (project: triplan | bueongi)';
+      await say(resp);
+      return;
+    }
+
+    const isOff = action === 'off' || action === 'pause';
+    const isOn = action === 'on' || action === 'resume';
+    if (!isOff && !isOn) {
+      await say(':x: 사용법: `loop status` · `loop on <project>` · `loop off <project>` (project: triplan | bueongi)');
+      return;
+    }
+    if (!target || !PROJECTS.includes(target)) {
+      await say(`:x: 프로젝트를 지정하세요: ${PROJECTS.map(p => '`' + p + '`').join(' | ')}. 예: \`loop off bueongi\``);
+      return;
+    }
+
+    try {
+      if (isOff) {
+        fs.writeFileSync(flagPath(target), `paused via slack at ${new Date().toISOString()}\n`);
+        await say(`:double_vertical_bar: *${target}* 팀 루프 정지 — 현재 에이전트 사이클 종료 후 멈춥니다. 재개: \`loop on ${target}\``);
+      } else {
+        if (fs.existsSync(flagPath(target))) fs.unlinkSync(flagPath(target));
+        await say(`:arrow_forward: *${target}* 팀 루프 재개 — 다음 패스부터 자동개발 순환을 시작합니다.`);
+      }
+    } catch (err) {
+      await say(`:x: 루프 제어 실패: ${err instanceof Error ? err.message : String(err)}`);
+    }
     return;
   }
 

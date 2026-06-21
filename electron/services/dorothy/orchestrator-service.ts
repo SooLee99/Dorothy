@@ -858,3 +858,53 @@ export async function advanceAllRuns(): Promise<AdvanceRunOutcome[]> {
   }
   return out;
 }
+
+/* ============================================================================
+ * 헤드리스 Run 파이프라인 드라이버 (하이브리드 자율 전환 1단계).
+ *
+ * Run 상태머신(advanceRun/advanceAllRuns)은 지금까지 IPC + Stop-hook 으로만
+ * 구동돼 사실상 휴면이었다. main 프로세스에서 이 ticker 를 돌리면 UI heartbeat
+ * 와 무관하게(=무인) advanceable Run 을 주기적으로 전진시킨다 →
+ * "orchestrator→워커→verify(qa-reviewer)→report→재작업" 자율 순환이 헤드리스로
+ * 굴러간다. pm-tick 의 PM/워커 wake 와 달리 "보는 눈" 게이트가 없다.
+ *
+ * ★안전: advanceRun 은 멱등 + 병렬정책 백오프(러닝 스텝/활성 세션 있으면 noop)라
+ *   team-loop 과 동시에 돌아도 같은 워커를 이중 디스패치하지 않는다. advanceable
+ *   Run 이 0개면 완전 no-op(현재 상태). team-loop 은 안전망으로 그대로 둔다.
+ * ★kill-switch: runtime/run-pipeline.paused 파일이 있으면 매 틱 즉시 스킵 →
+ *   rebuild/restart 없이 자율 구동을 끌 수 있다(되돌리기).
+ * ========================================================================== */
+let runPipelineTickHandle: ReturnType<typeof setInterval> | null = null;
+let runPipelineTickInFlight = false;
+
+export function startRunPipelineTicker(intervalMs = 60_000): void {
+  if (runPipelineTickHandle) return;
+  runPipelineTickHandle = setInterval(() => {
+    if (runPipelineTickInFlight) return; // 직전 틱이 아직 진행 중이면 겹치지 않음
+    // 런타임 kill-switch: 플래그 파일 존재 시 이번 틱 스킵(헤드리스 자율 즉시 정지).
+    try {
+      const fs = require('fs');
+      const os = require('os');
+      const path = require('path');
+      if (fs.existsSync(path.join(os.homedir(), '.dorothy', 'runtime', 'run-pipeline.paused'))) return;
+    } catch { /* 플래그 확인 실패는 무시(정상 구동 유지) */ }
+    runPipelineTickInFlight = true;
+    void advanceAllRuns()
+      .then((outs) => {
+        const acted = outs.filter((o) => o.action !== 'noop');
+        if (acted.length) {
+          console.log(`[run-pipeline] advanced ${acted.length} run(s): ` + acted.map((o) => `${o.runId}=${o.action}`).join(', '));
+        }
+      })
+      .catch((err) => console.warn('[run-pipeline] tick failed:', err))
+      .finally(() => { runPipelineTickInFlight = false; });
+  }, intervalMs);
+  console.log(`[run-pipeline] headless ticker started (every ${Math.round(intervalMs / 1000)}s)`);
+}
+
+export function stopRunPipelineTicker(): void {
+  if (runPipelineTickHandle) {
+    clearInterval(runPipelineTickHandle);
+    runPipelineTickHandle = null;
+  }
+}

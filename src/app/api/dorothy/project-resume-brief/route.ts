@@ -3,8 +3,10 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { loadTasks } from '@/lib/kanban-store';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 /**
  * Phase 6-AK — Resume Brief (READ-ONLY). Collects git status / dirty files /
@@ -22,9 +24,8 @@ function mask(s: string): string {
 
 function kanbanCounts(projectId: string) {
   try {
-    const f = path.join(os.homedir(), '.dorothy', 'kanban-tasks.json');
-    const raw = JSON.parse(fs.readFileSync(f, 'utf-8'));
-    const tasks = Array.isArray(raw) ? raw : raw.tasks || [];
+    // ★단일 소스 hermes SQLite 에서 읽음(과거 kanban-tasks.json 폐기).
+    const tasks = loadTasks();
     const match = (t: { projectId?: string; projectPath?: string }) => {
       const hay = `${t.projectId ?? ''} ${t.projectPath ?? ''}`.toLowerCase();
       return hay.includes(projectId.toLowerCase());

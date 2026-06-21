@@ -2,12 +2,14 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { resolveProjectRoot } from '@/lib/projectPaths';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 // 화이트리스트 prefix 안의 텍스트 파일만 읽기 허용.
-const TRIPLAN_ROOT = '/Users/soo/workspace/source-code/triplan';
+// C4-d — 경로는 companies.json 에서(literal 은 폴백만).
+const TRIPLAN_ROOT = resolveProjectRoot('triplan') ?? '/Users/soo/workspace/source-code/triplan';
 const home = os.homedir();
 const DOC_READ_PREFIXES = [TRIPLAN_ROOT, path.join(home, '.dorothy'), path.join(home, '.claude/memories')];
 

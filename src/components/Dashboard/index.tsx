@@ -1,7 +1,9 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
+import DetailModal from '@/components/DetailModal'; // 홈 정보 분리 — 부가 패널 팝업
+import EngineControlPanel from '@/components/EngineControlPanel'; // 자동개발 엔진 멈춤/재개 스위치
 import {
   Loader2,
   BarChart3,
@@ -54,6 +56,8 @@ function getModelPricing(modelId: string) {
 export default function Dashboard() {
   const { data, loading, error } = useClaude();
   const { agents } = useElectronAgents();
+  // 홈 정보 분리 — 부가 패널은 평소 메인에서 빼고 클릭 시 팝업(정보 손실 0).
+  const [detail, setDetail] = useState<null | 'models' | 'hours' | 'messages'>(null);
 
   // Calculate stats
   const stats = data?.stats;
@@ -170,6 +174,9 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-4 lg:space-y-6 pt-4 lg:pt-6">
+      {/* 자동개발 엔진 멈춤/재개 스위치 — 토큰 쓰는 동력 전체 토글(되돌릴 수 있음) */}
+      <EngineControlPanel />
+
       {/* Phase 6-AL — 자동개발 관제 센터(홈 상단 요약) */}
       <ControlCenter />
 
@@ -273,216 +280,110 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Model Usage */}
-      {stats?.modelUsage && Object.keys(stats.modelUsage).length > 0 && (
-        <div className="border border-border bg-card p-6">
-          <h3 className="text-sm font-medium mb-4 flex items-center gap-2 text-foreground">
-            <Bot className="w-4 h-4 text-muted-foreground" />
-            Model Usage
-          </h3>
+      {/* 부가 상세 — 메인 슬림: 핵심(위 통제·통계)은 한눈에, 상세는 클릭 팝업/이동(정보 손실 0). */}
+      <div className="border border-border bg-card p-4">
+        <h3 className="text-sm font-medium mb-3 flex items-center gap-2 text-foreground">
+          <BarChart3 className="w-4 h-4 text-muted-foreground" /> 상세 보기
+          <span className="text-xs text-muted-foreground font-normal">필요할 때만 펼쳐보세요</span>
+        </h3>
+        <div className="flex flex-wrap gap-2">
+          {stats?.modelUsage && Object.keys(stats.modelUsage).length > 0 && (
+            <button onClick={() => setDetail('models')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-secondary hover:bg-secondary/70 border border-border rounded-lg transition-colors">
+              <Bot className="w-3.5 h-3.5" /> 모델별 사용량
+            </button>
+          )}
+          <button onClick={() => setDetail('hours')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-secondary hover:bg-secondary/70 border border-border rounded-lg transition-colors">
+            <Clock className="w-3.5 h-3.5" /> 시간대별 활동
+          </button>
+          {recentHistory.length > 0 && (
+            <button onClick={() => setDetail('messages')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-secondary hover:bg-secondary/70 border border-border rounded-lg transition-colors">
+              <History className="w-3.5 h-3.5" /> 최근 메시지 {recentHistory.length}
+            </button>
+          )}
+          {agents.length > 0 && (
+            <Link href="/monitoring" className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-secondary hover:bg-secondary/70 border border-border rounded-lg transition-colors">
+              <Bot className="w-3.5 h-3.5" /> 에이전트 전체 {agents.length} →
+            </Link>
+          )}
+        </div>
+      </div>
+
+      {/* 모델별 사용량 팝업 (메인서 옮김·정보 손실 0) */}
+      <DetailModal open={detail === 'models'} onClose={() => setDetail(null)} title="Model Usage" subtitle="모델별 토큰·비용" widthClass="max-w-3xl">
+        {stats?.modelUsage && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {Object.entries(stats.modelUsage).map(([model, usage]) => {
               const modelName = model.includes('opus') ? 'Opus 4.5' : model.includes('sonnet') ? 'Sonnet 4.5' : model;
               const totalTokens = usage.inputTokens + usage.outputTokens;
-
               return (
-                <div key={model} className="p-4 bg-secondary border border-border hover:border-white/30 transition-all">
+                <div key={model} className="p-4 bg-secondary border border-border">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="font-medium text-foreground">
-                      {modelName}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      ${usage.costUSD?.toFixed(2) || '0.00'}
-                    </span>
+                    <span className="font-medium text-foreground">{modelName}</span>
+                    <span className="text-xs text-muted-foreground">${usage.costUSD?.toFixed(2) || '0.00'}</span>
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div>
-                      <span className="text-muted-foreground">Input:</span>
-                      <span className="ml-1 text-foreground">{(usage.inputTokens / 1000).toFixed(0)}k</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Output:</span>
-                      <span className="ml-1 text-foreground">{(usage.outputTokens / 1000).toFixed(0)}k</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Cache Read:</span>
-                      <span className="ml-1 text-foreground">{(usage.cacheReadInputTokens / 1000000).toFixed(1)}M</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Cache Create:</span>
-                      <span className="ml-1 text-foreground">{(usage.cacheCreationInputTokens / 1000000).toFixed(1)}M</span>
-                    </div>
+                    <div><span className="text-muted-foreground">Input:</span><span className="ml-1 text-foreground">{(usage.inputTokens / 1000).toFixed(0)}k</span></div>
+                    <div><span className="text-muted-foreground">Output:</span><span className="ml-1 text-foreground">{(usage.outputTokens / 1000).toFixed(0)}k</span></div>
+                    <div><span className="text-muted-foreground">Cache Read:</span><span className="ml-1 text-foreground">{(usage.cacheReadInputTokens / 1000000).toFixed(1)}M</span></div>
+                    <div><span className="text-muted-foreground">Cache Create:</span><span className="ml-1 text-foreground">{(usage.cacheCreationInputTokens / 1000000).toFixed(1)}M</span></div>
                   </div>
-                  <div className="mt-2 pt-2 border-t border-border text-xs text-muted-foreground">
-                    Total: {(totalTokens / 1000000).toFixed(2)}M tokens
-                  </div>
+                  <div className="mt-2 pt-2 border-t border-border text-xs text-muted-foreground">Total: {(totalTokens / 1000000).toFixed(2)}M tokens</div>
                 </div>
               );
             })}
           </div>
-        </div>
-      )}
+        )}
+      </DetailModal>
 
-      {/* Activity by Hour */}
-      <div className="border border-border bg-card p-4">
-        <h3 className="text-sm font-medium mb-3 flex items-center gap-2 text-foreground">
-          <Clock className="w-4 h-4 text-muted-foreground" />
-          Activity by Hour
-          <span className="text-xs text-muted-foreground font-normal ml-2">
-            (Total: {hourData.hours.reduce((a, b) => a + b, 0)} sessions)
-          </span>
-        </h3>
+      {/* 시간대별 활동 팝업 */}
+      <DetailModal open={detail === 'hours'} onClose={() => setDetail(null)} title="Activity by Hour" subtitle={`Total: ${hourData.hours.reduce((a, b) => a + b, 0)} sessions`} widthClass="max-w-2xl">
         <div className="flex items-end gap-1 h-24">
           {hourData.hours.map((count, hour) => {
             const height = (count / hourData.maxCount) * 100;
-
             return (
               <div key={hour} className="flex-1 flex flex-col items-center gap-1 group">
                 <div className="relative w-full flex justify-center">
-                  {/* Tooltip on hover */}
-                  <div className="absolute -top-6 opacity-0 group-hover:opacity-100 transition-opacity bg-background border border-border px-1.5 py-0.5 text-[10px] whitespace-nowrap z-10 text-foreground">
-                    {hour}:00 - {count} sessions
-                  </div>
-                  <div
-                    className={`w-full transition-all ${count > 0 ? 'bg-white' : 'bg-secondary'}`}
-                    style={{ height: `${Math.max(height, 4)}%`, minHeight: count > 0 ? '8px' : '4px' }}
-                  />
+                  <div className="absolute -top-6 opacity-0 group-hover:opacity-100 transition-opacity bg-background border border-border px-1.5 py-0.5 text-[10px] whitespace-nowrap z-10 text-foreground">{hour}:00 - {count} sessions</div>
+                  <div className={`w-full transition-all ${count > 0 ? 'bg-white' : 'bg-secondary'}`} style={{ height: `${Math.max(height, 4)}%`, minHeight: count > 0 ? '8px' : '4px' }} />
                 </div>
-                {hour % 6 === 0 && (
-                  <span className="text-[10px] text-muted-foreground">{hour}</span>
-                )}
+                {hour % 6 === 0 && (<span className="text-[10px] text-muted-foreground">{hour}</span>)}
               </div>
             );
           })}
         </div>
         <div className="flex justify-between mt-1 text-[10px] text-muted-foreground">
-          <span>12 AM</span>
-          <span>6 AM</span>
-          <span>12 PM</span>
-          <span>6 PM</span>
-          <span>12 AM</span>
+          <span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>12 AM</span>
         </div>
-      </div>
+      </DetailModal>
 
-      {/* Recent Messages */}
-      {recentHistory.length > 0 && (
-        <div className="border border-border bg-card p-6">
-          <h3 className="text-sm font-medium mb-4 flex items-center gap-2 text-foreground">
-            <History className="w-4 h-4 text-muted-foreground" />
-            Recent Messages
-          </h3>
-          <div className="space-y-3">
-            {recentHistory.map((entry, index) => {
-              const projectName = entry.project?.split('/').pop() || 'Unknown';
-              const agent = entry.project ? findAgentForProject(entry.project) : null;
-              const time = new Date(entry.timestamp).toLocaleTimeString('en-US', {
-                hour: '2-digit',
-                minute: '2-digit',
-              });
-              const date = new Date(entry.timestamp).toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-              });
-
-              return (
-                <div
-                  key={`${entry.timestamp}-${index}`}
-                  className="p-3 bg-secondary border border-border hover:border-white/30 transition-all"
-                >
-                  <div className="flex items-start gap-3">
-                    {/* Agent avatar or default */}
-                    <div className={`w-8 h-8 ${agent?.name?.toLowerCase() === 'bitwonka' ? 'bg-green-500/20' : 'bg-card'} flex items-center justify-center text-sm shrink-0`}>
-                      {agent ? (agent.name?.toLowerCase() === 'bitwonka' ? '🐸' : (characterEmojis[agent.character || 'robot'] || '🤖')) : '💬'}
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      {/* Header row */}
-                      <div className="flex items-center gap-2 mb-1">
-                        {agent && (
-                          <span className="text-xs font-medium text-foreground">
-                            {agent.name || `Agent ${agent.id.slice(0, 6)}`}
-                          </span>
-                        )}
-                        <span className="text-xs px-1.5 py-0.5 bg-white/10 text-muted-foreground">
-                          {projectName}
-                        </span>
-                        <span className="text-xs text-muted-foreground ml-auto shrink-0">
-                          {date} {time}
-                        </span>
-                      </div>
-
-                      {/* Message */}
-                      <p className="text-sm text-muted-foreground line-clamp-2">
-                        {entry.display}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Agents Overview */}
-      {agents.length > 0 && (
-        <div className="border border-border bg-card p-6">
-          <h3 className="text-sm font-medium mb-4 flex items-center gap-2 text-foreground">
-            <Bot className="w-4 h-4 text-muted-foreground" />
-            Agents Overview
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {agents.slice(0, 6).map((agent) => {
-              const projectName = agent.projectPath.split('/').pop() || 'Unknown';
-              const statusColors: Record<string, string> = {
-                running: 'bg-green-500',
-                waiting: 'bg-yellow-500',
-                idle: 'bg-gray-400',
-                error: 'bg-red-500',
-                completed: 'bg-white',
-              };
-
-              return (
-                <div
-                  key={agent.id}
-                  className="p-3 bg-secondary border border-border flex items-center gap-3 hover:border-white/30 transition-all"
-                >
-                  <div className="relative">
-                    <div className={`w-10 h-10 ${agent.name?.toLowerCase() === 'bitwonka' ? 'bg-green-500/20' : 'bg-card'} flex items-center justify-center text-xl`}>
-                      {agent.name?.toLowerCase() === 'bitwonka' ? '🐸' : (characterEmojis[agent.character || 'robot'] || '🤖')}
-                    </div>
-                    <div
-                      className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border border-secondary ${statusColors[agent.status]}`}
-                    />
+      {/* 최근 메시지 팝업 */}
+      <DetailModal open={detail === 'messages'} onClose={() => setDetail(null)} title="Recent Messages" subtitle={`최근 ${recentHistory.length}건`} widthClass="max-w-2xl">
+        <div className="space-y-3">
+          {recentHistory.map((entry, index) => {
+            const projectName = entry.project?.split('/').pop() || 'Unknown';
+            const agent = entry.project ? findAgentForProject(entry.project) : null;
+            const time = new Date(entry.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            const date = new Date(entry.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            return (
+              <div key={`${entry.timestamp}-${index}`} className="p-3 bg-secondary border border-border">
+                <div className="flex items-start gap-3">
+                  <div className={`w-8 h-8 ${agent?.name?.toLowerCase() === 'bitwonka' ? 'bg-green-500/20' : 'bg-card'} flex items-center justify-center text-sm shrink-0`}>
+                    {agent ? (agent.name?.toLowerCase() === 'bitwonka' ? '🐸' : (characterEmojis[agent.character || 'robot'] || '🤖')) : '💬'}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate text-foreground">
-                      {agent.name || `Agent ${agent.id.slice(0, 6)}`}
-                    </p>
-                    <p className="text-xs text-muted-foreground truncate">{projectName}</p>
+                    <div className="flex items-center gap-2 mb-1">
+                      {agent && (<span className="text-xs font-medium text-foreground">{agent.name || `Agent ${agent.id.slice(0, 6)}`}</span>)}
+                      <span className="text-xs px-1.5 py-0.5 bg-white/10 text-muted-foreground">{projectName}</span>
+                      <span className="text-xs text-muted-foreground ml-auto shrink-0">{date} {time}</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground line-clamp-2">{entry.display}</p>
                   </div>
-                  <span
-                    className={`
-                      text-[10px] px-2 py-0.5 font-medium
-                      ${agent.status === 'running' ? 'bg-green-500/20 text-green-400' : ''}
-                      ${agent.status === 'waiting' ? 'bg-yellow-500/20 text-yellow-400' : ''}
-                      ${agent.status === 'idle' ? 'bg-gray-500/20 text-gray-400' : ''}
-                      ${agent.status === 'error' ? 'bg-red-500/20 text-red-400' : ''}
-                    `}
-                  >
-                    {agent.status}
-                  </span>
                 </div>
-              );
-            })}
-          </div>
-          {agents.length > 6 && (
-            <p className="text-xs text-muted-foreground mt-3 text-center">
-              +{agents.length - 6} more agents
-            </p>
-          )}
+              </div>
+            );
+          })}
         </div>
-      )}
+      </DetailModal>
     </div>
   );
 }

@@ -15,8 +15,8 @@ export interface AlertSignal {
   providersLimited: string[];
   /** safePause/EXTERNAL_PAUSE 지속 초(없으면 null). */
   pausedSeconds: number | null;
-  /** 사람 호출 큐(최근 escalations) — kind+at 로 dedupe. */
-  escalations: { kind: string; detail: string; at: string }[];
+  /** 사람 호출 큐(최근 escalations) — kind+안정ID(approvalId/detail) 로 dedupe(반복 escalation 스팸 방지). */
+  escalations: { kind: string; detail: string; at: string; approvalId?: string }[];
   /**
    * PR-감지A — "도는 척" 사각: MCP/대시보드(/api/agents in-memory)는 running 인데
    * 디스크(agents.json)는 idle 인 ★두 상태원 불일치가 무진행으로 지속된 에이전트.
@@ -57,8 +57,10 @@ export function evaluateAlerts(
     want.set('pause', { key: 'pause', severity: 'warn', text: `시스템 정지 ${Math.round(sig.pausedSeconds / 60)}분 지속` });
   }
   for (const e of sig.escalations) {
-    const key = `esc:${e.kind}:${e.at}`;
-    want.set(key, { key, severity: 'critical', text: `사람/승인 필요: ${e.kind} — ${e.detail}` });
+    // ★dedupe: 동일 조건(같은 kind+승인ID/내용)은 1회만 — 반복 escalation 스팸 방지(타임스탬프 키 X).
+    const stableId = e.approvalId || e.detail || e.at;
+    const key = `esc:${e.kind}:${stableId}`;
+    want.set(key, { key, severity: 'critical', text: `사람/승인 필요: ${e.kind}${e.detail ? ' — ' + e.detail : ''}` });
   }
   // PR-감지A — "도는 척"(MCP running ↔ 디스크 idle) 불일치가 ★임계 이상 무진행으로 지속될 때만 알림.
   //   짧은 상태 전파 지연(정상 완료 직후)은 mismatchSeconds 임계로 거른다. dedupe/해제는 공통 메커니즘 재사용.

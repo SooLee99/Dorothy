@@ -22,6 +22,8 @@ import {
   FolderOpen,
 } from 'lucide-react';
 import { useClaude } from '@/hooks/useClaude';
+import UsageConsumptionCard from '@/components/UsageConsumptionCard';
+import UsageBreakdown from '@/components/UsageBreakdown';
 import { FreshnessBadge } from '@/components/Freshness'; // 갭2 canary: 신선도 배지
 
 // Token pricing per million tokens (MTok)
@@ -461,6 +463,12 @@ export default function UsagePage() {
           Track your subscription quota, session activity, and estimated API costs
         </p>
       </div>
+
+      {/* 현재 사용 한도(5h 롤링) — 한도 도달 전 proactive 가시성 */}
+      <UsageConsumptionCard />
+
+      {/* 사용량 분석 — 무슨 일/모델/플랫폼/툴에 토큰 썼나(hermes insights) */}
+      <UsageBreakdown />
 
       {/* Subscription Quota */}
       {!data?.rateLimits && (

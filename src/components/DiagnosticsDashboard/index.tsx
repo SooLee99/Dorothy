@@ -1,4 +1,5 @@
 'use client';
+import DetailModal from '@/components/DetailModal';
 
 /**
  * Diagnostics Dashboard (/diagnostics) — Phase 6-A.
@@ -357,13 +358,14 @@ export default function DiagnosticsDashboard() {
         </div>
       ) : (
         <ul className="space-y-2">
+          {/* 팝업화 — 리스트는 항상 요약(collapsed). 클릭 시 상세는 DetailModal 로(메인 슬림). */}
           {filtered.map(d => (
             <DiagnosticCard
               key={d.id}
               diagnostic={d}
-              expanded={expandedId === d.id}
+              expanded={false}
               busy={busyId === d.id}
-              onToggle={() => setExpandedId(expandedId === d.id ? null : d.id)}
+              onToggle={() => setExpandedId(d.id)}
               onUpdateStatus={onUpdateStatus}
               onConvert={onConvert}
               onConvertToSkillCandidate={onConvertToSkillCandidate}
@@ -371,6 +373,34 @@ export default function DiagnosticsDashboard() {
           ))}
         </ul>
       )}
+
+      {/* 팝업화 — 선택 진단 상세(요약은 리스트에·상세는 여기로 옮김·정보 손실 0·DiagnosticCard 재사용). */}
+      {(() => {
+        const detail = filtered.find(d => d.id === expandedId) ?? null;
+        return (
+          <DetailModal
+            open={!!detail}
+            onClose={() => setExpandedId(null)}
+            title={detail?.title ?? '진단 상세'}
+            subtitle={detail ? `${detail.source} · ${detail.severity}` : undefined}
+            widthClass="max-w-2xl"
+          >
+            {detail && (
+              <ul>
+                <DiagnosticCard
+                  diagnostic={detail}
+                  expanded
+                  busy={busyId === detail.id}
+                  onToggle={() => setExpandedId(null)}
+                  onUpdateStatus={onUpdateStatus}
+                  onConvert={onConvert}
+                  onConvertToSkillCandidate={onConvertToSkillCandidate}
+                />
+              </ul>
+            )}
+          </DetailModal>
+        );
+      })()}
     </Shell>
   );
 }

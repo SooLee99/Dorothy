@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { FreshnessBadge } from '@/components/Freshness';
+import { useStore } from '@/store'; // 재설계 ②-a — 전역 프로젝트 스위처 동기화
 import {
   CheckCircle2,
   XCircle,
@@ -145,6 +146,15 @@ export default function TestResultsDashboard() {
     void load(projectId || undefined);
     // projectId 변경 시 재조회
   }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 재설계 ②-a — 전역 프로젝트 스위처 동기화: 선택 프로젝트가 ★E2E 등록된 프로젝트일 때만
+  //   해당 탭으로 전환(아니거나 '전체'면 자체 기본 유지 = 안전 degrade).
+  const selectedProject = useStore((s) => s.selectedProject);
+  useEffect(() => {
+    if (!selectedProject) return;
+    const known = data?.projects?.some((p) => p.id === selectedProject);
+    if (known && projectId !== selectedProject) setProjectId(selectedProject);
+  }, [selectedProject, data?.projects, projectId]);
 
   const runs = data?.runs ?? [];
   const captures = data?.localCaptures ?? [];

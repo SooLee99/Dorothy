@@ -4,12 +4,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { Users, RefreshCw, FileText, GitCommit, X, Clock } from 'lucide-react';
 import { dorothyClient } from '@/lib/dorothyClient';
 import { TaskWorkflowView } from '@/components/KanbanBoard/components/TaskWorkflowView';
+import DomainTabs, { AGENT_DOMAIN } from '@/components/DomainTabs'; // 재설계 ②-b — 에이전트 도메인 탭
 
 interface DocEntry { path: string; relPath: string; mtime: string; sizeBytes: number; }
 interface Commit { sha: string; subject: string; date: string; repo: string; }
 interface AgentRow {
   agentId: string; roleId: string; name: string; engine: string | null;
-  subProjectId: string | null; status: string; lastActivity: string | null;
+  projectId?: string | null; subProjectId: string | null; status: string; lastActivity: string | null;
   currentTask: string | null; statusLine: string | null; outputTail: string;
   recentCommits: Commit[]; reports: DocEntry[]; docs: DocEntry[];
 }
@@ -105,6 +106,7 @@ export default function AgentActivityPage() {
 
   return (
     <div className="space-y-4 lg:space-y-6 pt-4 lg:pt-6">
+      <DomainTabs tabs={AGENT_DOMAIN} title="에이전트" bare />
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
@@ -161,7 +163,7 @@ export default function AgentActivityPage() {
                   const waiting = myTasks.filter((k) => k.column !== "ongoing").length;
                   const appr = myTasks.filter((k) => (k.labels || []).includes("approval-required")).length;
                   return (
-                    <div key={a.agentId} className="border border-border rounded-lg bg-card p-3 flex flex-col gap-2">
+                    <div key={`${a.projectId ?? ''}-${a.agentId}`} className="border border-border rounded-lg bg-card p-3 flex flex-col gap-2">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <div className="font-semibold text-sm text-foreground truncate">{a.name}</div>

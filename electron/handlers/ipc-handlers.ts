@@ -1771,18 +1771,38 @@ function registerFileSystemHandlers(deps: IpcHandlerDependencies): void {
       const dirs = fs.readdirSync(claudeDir);
       const projects: Array<{ id: string; path: string; name: string }> = [];
 
+      const seenPaths = new Set<string>();
       for (const dir of dirs) {
         const fullPath = path.join(claudeDir, dir);
         const stat = fs.statSync(fullPath);
         if (!stat.isDirectory()) continue;
 
         const decodedPath = decodeProjectPath(dir);
+        seenPaths.add(decodedPath);
         projects.push({
           id: dir,
           path: decodedPath,
           name: path.basename(decodedPath),
         });
       }
+
+      // ★등록된 프로젝트(project-capsules.json)를 병합 — Claude 세션 디렉터리가 없어도 항상 노출.
+      //   bueongi 처럼 루트가 .claude/projects 에 없으면 칸반 목록서 누락되던 문제를 메운다.
+      //   path 기준 dedup(이미 있으면 capsule 이름으로 덮어쓰지 않음).
+      try {
+        const capsFile = path.join(os.homedir(), '.dorothy', 'project-capsules.json');
+        const raw = JSON.parse(fs.readFileSync(capsFile, 'utf8'));
+        const caps: Array<{ projectId?: string; id?: string; rootPath?: string }> = Array.isArray(raw) ? raw : (raw.capsules ?? []);
+        for (const c of caps) {
+          let root = c.rootPath;
+          if (!root) continue;
+          if (root.startsWith('~')) root = path.join(os.homedir(), root.slice(1));
+          if (seenPaths.has(root)) continue;       // 이미 .claude/projects 에서 잡힘
+          if (!fs.existsSync(root)) continue;       // 실제 경로 있는 것만
+          seenPaths.add(root);
+          projects.push({ id: c.projectId || c.id || root, path: root, name: path.basename(root) });
+        }
+      } catch { /* capsule 없거나 파싱 실패 → .claude/projects 결과만 반환 */ }
 
       return projects;
     } catch (err) {

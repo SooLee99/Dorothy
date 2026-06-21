@@ -48,6 +48,27 @@ const FORBIDDEN_PATHS_HINT = [
   'approval-policy.md',
 ];
 
+/**
+ * 텍스트(칸반 카드 제목 등)가 사용자 승인 게이트가 필요한 위험 토픽/경로를 담고 있나.
+ * ★위험 정책(USER_GATE_TOPICS / FORBIDDEN_PATHS_HINT)을 ★카드 레벨에서 재사용하기 위한
+ * 경량 사전판정 — kanban 'planned' 컬럼이 plan-validator 를 건너뛰고 approved 로 직행하던
+ * 우회(kanban-task-adapter)를 막는 데 쓴다. Plan 없이 제목만으로 위험 작업(SEC/secret/auth/
+ * push/production/금지경로)을 잡아 approval_required 로 보내 사람 승인을 거치게 한다.
+ * (정책 단일 소스: 여기 상수를 그대로 재사용 — 중복 정의 금지.)
+ */
+export function textNeedsUserGate(text: string | null | undefined): { gated: boolean; topic?: string } {
+  const hay = String(text ?? '').toLowerCase();
+  if (!hay) return { gated: false };
+  for (const t of USER_GATE_TOPICS) {
+    if (hay.includes(t)) return { gated: true, topic: t };
+  }
+  for (const p of FORBIDDEN_PATHS_HINT) {
+    const needle = p.toLowerCase().replace('~/', '');
+    if (needle && hay.includes(needle)) return { gated: true, topic: p };
+  }
+  return { gated: false };
+}
+
 const TRIPLAN_ROOT_DEFAULT = '/Users/soo/workspace/source-code/triplan';
 
 function approvalsDir(): string {

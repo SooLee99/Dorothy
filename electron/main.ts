@@ -98,7 +98,7 @@ import { registerDorothyHandlers } from './handlers/dorothy-handlers';
 import { startBusyLockMaintainer } from './core/busy-lock';
 import { initVaultDb, closeVaultDb } from './services/vault-db';
 import { initDorothyDb, closeDorothyDb } from './services/dorothy/db';
-import { configureOrchestrator } from './services/dorothy/orchestrator-service';
+import { configureOrchestrator, startRunPipelineTicker } from './services/dorothy/orchestrator-service';
 import {
   configureAutoResume,
   startAutoResumeTicker,
@@ -565,6 +565,13 @@ app.whenReady().then(async () => {
     },
   });
   startAutoResumeTicker(60_000);
+
+  // 하이브리드 자율 전환 1단계 — 헤드리스 Run 파이프라인 드라이버.
+  //   휴면이던 Run 상태머신(advanceAllRuns)을 UI heartbeat 무관하게 주기 구동 →
+  //   orchestrator→워커→verify→report→재작업 자율 순환을 무인으로 활성화.
+  //   ★안전: advanceRun 멱등·병렬 백오프(team-loop 이중 디스패치 방지), advanceable
+  //   Run 0개면 no-op. kill-switch: runtime/run-pipeline.paused 로 즉시 정지.
+  startRunPipelineTicker(60_000);
 
   // Register vault handlers
   registerVaultHandlers({ getMainWindow });

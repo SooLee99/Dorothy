@@ -13,6 +13,7 @@ import { registerSessionsRoutes } from './sessions-routes';
 import { registerProvidersRoutes } from './providers-routes';
 import { registerTasksRoutes } from './tasks-routes';
 import { registerProjectsRoutes } from './projects-routes';
+import { registerActionItemsRoutes } from './action-items-routes';
 
 export function registerAllRoutes(app: RouteApp, ctx: RouteContext): void {
   registerHealthRoutes(app, ctx);
@@ -29,6 +30,7 @@ export function registerAllRoutes(app: RouteApp, ctx: RouteContext): void {
   registerProvidersRoutes(app, ctx); // PR-0b — provider 한도 신호(read-only, dispatcher 미변경)
   registerTasksRoutes(app, ctx); // PR-2-S1 — Tasks 신호(read-only, kanban 재사용)
   registerProjectsRoutes(app, ctx); // PR-2-S2 — Projects 신호(read-only, FE/BE 프로브 + git)
+  registerActionItemsRoutes(app, ctx); // 사용자 처리 사항(Action Items) — (B) 사람 몫 escalation 모음 + 해결표시
 }
 
 export type { RouteApp, RouteContext, RouteRequest, SendJson, RouteHandler, RouteDefinition } from './types';

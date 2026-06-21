@@ -3,8 +3,10 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { proposalsFromKanban, classifyRisk, isHighRiskTarget, type SkillProposal } from '@/lib/skillProposals';
+import { loadTasks } from '@/lib/kanban-store';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 /**
  * Phase 6-AU — 스킬 자기개선 제안 store/적용 (B: 저위험 자동 + 고위험 승인).
@@ -20,7 +22,6 @@ const HOME = os.homedir();
 const SKILLS_ROOT = path.join(HOME, '.claude', 'skills');
 const STORE = path.join(HOME, '.dorothy', 'skill-proposals.json');
 const SETTINGS = path.join(HOME, '.dorothy', 'app-settings.json');
-const KANBAN = path.join(HOME, '.dorothy', 'kanban-tasks.json');
 const K_ENABLED = 'dorothySkillSelfImprovementEnabled';
 const K_AUTO_LOW = 'dorothyAutoApplyLowRiskSkillProposals';
 
@@ -36,7 +37,8 @@ function readSettings(): Record<string, unknown> {
 }
 function writeSettings(s: Record<string, unknown>) { fs.writeFileSync(SETTINGS, JSON.stringify(s, null, 2)); }
 function readKanban(): { title?: string; description?: string; column?: string }[] {
-  try { const v = JSON.parse(fs.readFileSync(KANBAN, 'utf-8')); return Array.isArray(v) ? v : (v.tasks ?? []); } catch { return []; }
+  // ★단일 소스 hermes SQLite 에서 읽음(과거 kanban-tasks.json 폐기).
+  return loadTasks();
 }
 
 /** relTarget 을 SKILLS_ROOT 안의 절대경로로 안전 해석(이탈 시 null) */

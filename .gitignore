@@ -60,3 +60,7 @@ mcp-world/dist
 electron/dist
 
 .idea
+
+# auto-backup files (.bak.TIMESTAMP)
+*.bak
+*.bak.*

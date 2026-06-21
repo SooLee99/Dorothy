@@ -30,6 +30,7 @@
 import type { Run, RunState } from '../../types/dorothy';
 import { createRun, getRun, listRuns, updateRunState } from './run-service';
 import { decideRunMode } from './run-mode-router';
+import { textNeedsUserGate } from './plan-validator-service';
 
 export type KanbanColumn = 'backlog' | 'planned' | 'ongoing' | 'done';
 
@@ -103,6 +104,19 @@ export function onKanbanTaskChanged(
   const target = targetStateForColumn(task.column);
   if (target === null) return null;
 
+  // ★보안 봉합: kanban 'planned' 컬럼 → approved 직행이 plan-validator(승인 게이트)를 건너뛰던
+  //   우회를 차단한다. planned 카드 제목이 위험 토픽(SEC/secret/auth/push/production/금지경로)이면
+  //   approved 대신 approval_required 로 보내 ★사람 승인을 거치게 한다(approval_required 는 ticker
+  //   advanceable 이 아니라 자동 실행되지 않음). 안전한 작업은 그대로 approved 로 흘러 정상 보존.
+  let effectiveTarget: RunState = target;
+  if (target === 'approved') {
+    const gate = textNeedsUserGate(task.title);
+    if (gate.gated) {
+      effectiveTarget = 'approval_required';
+      console.log(`[kanban-adapter] planned→approved 우회 차단: "${task.title}" (위험토픽=${gate.topic}) → approval_required(사람 승인 대기)`);
+    }
+  }
+
   // 1) Look for an existing Run already linked to this Kanban task.
   const existing = listRuns({ kanbanTaskId: task.id, limit: 1 })[0];
 
@@ -128,7 +142,7 @@ export function onKanbanTaskChanged(
         source: 'kanban',
         sourceRefId: task.id,
         priority: task.priority ?? 'medium',
-        state: target,
+        state: effectiveTarget,
         kanbanTaskId: task.id,
         mode,
         modeSource,
@@ -141,10 +155,16 @@ export function onKanbanTaskChanged(
   }
 
   // 3) Mirror exists — bump it to the target state (no-op if already there).
-  if (existing.state === target) return existing;
+  if (existing.state === effectiveTarget) return existing;
+  // ★보안 봉합 보호: 이미 실행 단계(running 이후)인 Run 은 게이트 다운그레이드로 끌어내리지 않음
+  //   (진행 중 작업 중단 방지). pre-execution Run 만 approval_required 로 잡는다.
+  if (effectiveTarget === 'approval_required'
+      && !(['created', 'planned', 'approval_required'] as RunState[]).includes(existing.state)) {
+    return existing;
+  }
 
   try {
-    return updateRunState(existing.id, target, {
+    return updateRunState(existing.id, effectiveTarget, {
       comment: `mirrored from kanban column "${task.column}"`,
     });
   } catch (err) {

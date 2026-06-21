@@ -7,6 +7,7 @@ import type { KanbanTask, ChecklistItem } from '@/types/kanban';
 import { COLUMN_CONFIG, getLabelColor } from '../constants';
 import { ALL_OPERATION_AGENT_IDS } from '@/lib/agentProcessDisplay';
 import { TaskWorkflowView } from './TaskWorkflowView';
+import { TaskRunsTimeline } from './TaskRunsTimeline'; // 재설계 ③ — 타임라인(시도 이력/이벤트, hermes)
 // Phase 2 PR-2-U0/U2 — 작업 상세 탭(additive). [진행] 탭 세션 배선=U2.
 import { ReadonlyTerminal } from '@/components/phase2/ReadonlyTerminal';
 import { SessionPicker } from '@/components/phase2/SessionPicker';
@@ -19,7 +20,7 @@ const PHASE2_TABS = [
   { key: 'design', label: '설계', disabled: false },
   { key: 'artifacts', label: '산출물', disabled: false },
   { key: 'preview', label: '미리보기/API', disabled: true },
-  { key: 'timeline', label: '타임라인', disabled: true },
+  { key: 'timeline', label: '타임라인', disabled: false }, // 재설계 ③ — 시도 이력/이벤트(hermes)
 ] as const;
 type Phase2Tab = (typeof PHASE2_TABS)[number]['key'];
 
@@ -418,8 +419,10 @@ export function KanbanCardDetail({ task, onClose, onUpdate, onDelete }: KanbanCa
             {activeTab === 'design' && <TaskSignalTabs taskId={task.id} tab="design" />}
             {/* [산출물]: tasks/{id}.artifacts + ★done 배지(EvidenceChip, verified만 초록=G1). */}
             {activeTab === 'artifacts' && <TaskSignalTabs taskId={task.id} tab="artifacts" />}
-            {/* [미리보기/API][타임라인] — Phase 3, 비활성 placeholder(내용 0). */}
-            {(activeTab === 'preview' || activeTab === 'timeline') && (
+            {/* 재설계 ③ — [타임라인]: 시도 이력(runs)+이벤트+코멘트(hermes kanban show). 죽은 /runs 데이터 surfacing. */}
+            {activeTab === 'timeline' && <TaskRunsTimeline taskId={task.id} />}
+            {/* [미리보기/API] — Phase 3, 비활성 placeholder(내용 0). */}
+            {activeTab === 'preview' && (
               <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground/60">
                 준비 안 됨 (Phase 3)
               </div>

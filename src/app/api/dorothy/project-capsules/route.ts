@@ -5,11 +5,12 @@ import os from 'os';
 import { execFileSync } from 'child_process';
 import { generateKanbanPreview } from '@/lib/projectIsolation';
 import { ALL_OPERATION_AGENT_IDS } from '@/lib/agentProcessDisplay';
+import { loadTasks, saveTasks } from '@/lib/kanban-store';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const KANBAN_FILE = path.join(os.homedir(), '.dorothy', 'kanban-tasks.json');
+// ★단일 소스: 칸반은 hermes SQLite(~/.hermes/kanban.db). load/save 는 @/lib/kanban-store 위임.
 // Phase 6-AY — 스캐폴드 쓰기 허용 루트(이 밖으로는 절대 생성하지 않음).
 const APPS_ROOT = '/Users/soo/workspace/source-code/apps';
 
@@ -173,9 +174,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, dryRun: true, wouldCreate: planned.length, tasks: planned });
     }
 
-    // confirm=true → 실제 생성(기존 task 삭제 없음, idempotent)
-    let existing: Record<string, unknown>[] = [];
-    try { const raw = JSON.parse(fs.readFileSync(KANBAN_FILE, 'utf-8')); existing = Array.isArray(raw) ? raw : (raw.tasks ?? []); } catch { existing = []; }
+    // confirm=true → 실제 생성(기존 task 삭제 없음, idempotent). ★단일 소스 hermes SQLite.
+    const existing: Record<string, unknown>[] = loadTasks() as unknown as Record<string, unknown>[];
     const have = new Set(existing.map(t => t.id));
     const now = new Date().toISOString();
     let created = 0;
@@ -191,7 +191,7 @@ export async function POST(req: Request) {
       });
       created++;
     }
-    try { fs.writeFileSync(KANBAN_FILE, JSON.stringify(existing, null, 2)); }
+    try { saveTasks(existing); }
     catch (err) { return NextResponse.json({ ok: false, error: String(err) }, { status: 500 }); }
     // capsule status → active
     cap.status = 'active'; cap.updatedAt = now; writeCapsules(list);

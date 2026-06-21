@@ -59,7 +59,9 @@ export async function GET() {
     const agentStates = safeReadJson<Record<string, AgentState>>(path.join(runtimeDir, 'auto-loop-state.json')) || {};
 
     // 데몬 생존(PID) + 정지 플래그
-    const pauseFlag = fs.existsSync(path.join(runtimeDir, 'triplan-pm-tick.paused'));
+    // 정합성 C3-b — team-loop 상태는 ★team-loop 정지 플래그로 판정(이전엔 pm-tick 의 정지
+    //   플래그를 잘못 읽어, team-loop 이 도는데도 "일시정지"로 오표시됐다).
+    const pauseFlag = fs.existsSync(path.join(runtimeDir, 'triplan-team-loop.paused'));
     let pidAlive = false;
     let pid: number | null = null;
     try {

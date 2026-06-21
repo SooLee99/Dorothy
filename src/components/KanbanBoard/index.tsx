@@ -32,6 +32,7 @@ import { COLUMN_ORDER } from './constants';
 import { ProjectsStrip } from '@/components/phase2/ProjectsStrip';
 import { matchesCapsule } from '@/components/phase2/lib';
 import type { ProjectCardData } from '@/components/phase2/ProjectCard';
+import { useStore } from '@/store'; // 재설계 ①단계 — 전역 ProjectSwitcher 연동
 
 // Lazy load the terminal dialog
 const AgentTerminalDialog = dynamic(
@@ -40,28 +41,42 @@ const AgentTerminalDialog = dynamic(
 );
 
 // --- Per-project grouping (normalized) -------------------------------------
-// projectId values are messy (clean slugs, path-encoded "-Users-soo-...", and
-// grouping buckets). Normalize to a stable key per real project so the project
-// filter shows clean, deduped per-project views. Prefer projectPath basename
-// (undefined-safe); fall back to projectId. Path-encoded variants collapse to
-// the same key as their clean counterpart.
-// 프로젝트는 상위 2개(dorothy / triplan)로만 묶는다. 하위 레포
-// (triplan-travel-service·triplan-frontend·soo-auth-service)는 triplan에,
-// dorothy-* 는 dorothy 로 통합한다.
+// projectId/projectPath 값은 제각각(clean slug, path-encoded "-Users-soo-...",
+// 빈 값). 실제 프로젝트별로 ★정확히 분리되도록 정규화한다.
+//   - 알려진 묶음: dorothy / triplan(코어+하위레포+auth) / bueongi(부엉이) / 안심귀가.
+//   - 그 외: projectPath basename → projectId 순으로 ★일반 키 생성(특정 프로젝트로
+//     강제 매핑하지 않음). 과거엔 미지의 프로젝트를 전부 'triplan'으로 떨궈
+//     bueongi·안심귀가가 triplan에 섞이는 ★필터 버그가 있었다 → 일반 폴백으로 수정.
+// 정체 통일 — capsule 프로젝트는 triplan·bueongi 2개. raw 태그(9가지 변형)를 canonical 로 묶는다.
+//   · triplan = triplan / triplan-frontend / triplan-travel-service / soo-auth-service
+//   · bueongi = bueongi / 부엉이 / ★안심귀가(앱 이름) / frontend-src(부엉이 프론트엔드) / ansim·safe-return
+//   · Dorothy(대시보드 앱)·.dorothy(런타임 설정)은 ★비프로젝트 → '미분류'(unknown).
+//   resolveProjectId(capsule)는 자유텍스트 '안심귀가'를 못 잡아, 키워드 별칭으로 더 완전히 정규화.
 function projectGroupKey(task: KanbanTask): string {
   const pp = typeof task.projectPath === 'string' ? task.projectPath.trim() : '';
-  const pid = typeof task.projectId === 'string' ? task.projectId : '';
+  const pid = typeof task.projectId === 'string' ? task.projectId.trim() : '';
   const hay = `${pp} ${pid}`.toLowerCase();
-  if (hay.includes('dorothy')) return 'dorothy';
-  // triplan 코어 + 모든 하위 레포 + 인증 서비스는 triplan 으로 통합
+  // 비프로젝트(대시보드 앱/런타임 설정)는 프로젝트 그룹이 아님 → 미분류.
+  if (hay.includes('dorothy')) return 'unknown';
   if (hay.includes('triplan') || hay.includes('soo-auth') || hay.includes('travel-service')) return 'triplan';
-  if (!pp && !pid) return 'unknown';
-  return 'triplan';
+  if (
+    hay.includes('bueongi') || hay.includes('부엉') ||
+    hay.includes('안심귀가') || hay.includes('ansim') || hay.includes('safe-return') ||
+    hay.includes('frontend-src')
+  ) return 'bueongi';
+  // ★일반 폴백: 경로 basename → projectId → unknown (특정 프로젝트로 강제하지 않음)
+  if (pp) {
+    const base = pp.split('/').filter(Boolean).pop();
+    if (base) return base.toLowerCase();
+  }
+  if (pid) return pid.toLowerCase();
+  return 'unknown';
 }
 
 const PROJECT_LABELS: Record<string, string> = {
-  'triplan': 'triplan',
-  'dorothy': 'dorothy',
+  'triplan': 'triplan (여행)',
+  'bueongi': 'bueongi (부엉이·안심귀가)',
+  'unknown': '미분류',
 };
 function projectGroupLabel(key: string): string {
   return PROJECT_LABELS[key] ?? key;
@@ -151,13 +166,40 @@ export default function KanbanBoard() {
   const [filterAgent, setFilterAgent] = useState<string | null>(null);
   const [agentDropdownOpen, setAgentDropdownOpen] = useState(false);
   // Phase 2 PR-2-U1 — 프로젝트 카드 클릭 필터(★별도 슬롯: 기존 filterProject 등을 덮어쓰지 않고 AND 합성).
+  // 재설계 ①단계 — 선택 상태의 단일 소스를 전역 store.selectedProject 로 승격. 사이드바
+  //   ProjectSwitcher 와 칸반 in-board ProjectsStrip 이 같은 store 를 공유해 동기화된다.
+  //   filterProjectSel(=실제 capsule 필터에 쓰는 카드)은 store.selectedProject + 프로젝트 목록에서 파생.
+  const selectedProject = useStore((s) => s.selectedProject);
+  const setSelectedProject = useStore((s) => s.setSelectedProject);
+  const [projectList, setProjectList] = useState<ProjectCardData[]>([]);
   const [filterProjectSel, setFilterProjectSel] = useState<ProjectCardData | null>(null);
-  const handleSelectProject = useCallback((project: ProjectCardData | null) => {
-    setFilterProjectSel((prev) => {
-      if (!project) return null;
-      return prev?.projectId === project.projectId ? null : project; // 같은 카드 재클릭 → 해제(토글)
-    });
+
+  // 프로젝트 목록(카드+repos) 로드 — store.selectedProject(id) → 카드 해석용.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch('/api/dorothy/projects', { cache: 'no-store' });
+        const j = await res.json();
+        const list = j?.data?.projects;
+        if (!cancelled && Array.isArray(list)) setProjectList(list);
+      } catch { /* 실패 시 목록 비움 → 필터 미적용(안전) */ }
+    };
+    load();
+    const t = setInterval(load, 30_000);
+    return () => { cancelled = true; clearInterval(t); };
   }, []);
+
+  // store.selectedProject → filterProjectSel(카드) 파생. 못 찾으면 null(필터 미적용·안전).
+  useEffect(() => {
+    if (!selectedProject) { setFilterProjectSel(null); return; }
+    setFilterProjectSel(projectList.find((p) => p.projectId === selectedProject) ?? null);
+  }, [selectedProject, projectList]);
+
+  // in-board ProjectsStrip 카드 클릭 → 전역 store 갱신(토글). 사이드바 스위처와 동기화.
+  const handleSelectProject = useCallback((project: ProjectCardData | null) => {
+    setSelectedProject(project && selectedProject !== project.projectId ? project.projectId : null);
+  }, [selectedProject, setSelectedProject]);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // --- 회사별 보기 (company filter) ---
@@ -608,7 +650,7 @@ export default function KanbanBoard() {
       </div>
 
       {/* Phase 2 PR-2-U1 — Projects 영역(additive, 보드 위). 카드 클릭 → 프로젝트 필터(별도 슬롯). */}
-      <ProjectsStrip selectedId={filterProjectSel?.projectId ?? null} onSelect={handleSelectProject} />
+      <ProjectsStrip selectedId={selectedProject} onSelect={handleSelectProject} />
 
       {/* Board */}
       <div className="flex-1 overflow-x-auto px-6 pb-6">

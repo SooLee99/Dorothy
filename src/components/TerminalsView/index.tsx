@@ -4,6 +4,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { isElectron } from '@/hooks/useElectron';
 import { DndContext } from '@dnd-kit/core';
 import { useElectronAgents, useElectronFS, useElectronSkills } from '@/hooks/useElectron';
+import { useProjectScope } from '@/lib/useProjectScope'; // 모니터링 — 전역 프로젝트 스위처로 터미널 필터
 import { useMultiTerminal } from './hooks/useMultiTerminal';
 import { useTerminalGrid } from './hooks/useTerminalGrid';
 import { useTabManager } from './hooks/useTabManager';
@@ -52,12 +53,21 @@ export default function TerminalsView({
   const { projects, openFolderDialog } = useElectronFS();
   const { installedSkills, refresh: refreshSkills } = useElectronSkills();
 
-  // 회사별 보기: 선택 회사의 에이전트만 (미분류 = 매핑 없음, 전체 = 전부). agents.json 미변경.
+  // 정합성 — ★안 켜진(비활성) 터미널 숨김: 모니터링은 "지금 도는 것"만 보여준다.
+  //   활성 = running|waiting. idle/completed/error(꺼진 터미널)는 그리드에서 제외.
+  //   (시작은 /agents·칸반·AddAgent 로. 모니터링은 라이브 관측 전용.)
+  const ACTIVE_STATUSES = useMemo(() => new Set(['running', 'waiting']), []);
+  // 모니터링 — 전역 ProjectSwitcher 로 프로젝트별 필터(resolveProjectId 정규화·서브프로젝트 통합).
+  const { matches: matchesProject } = useProjectScope();
+  // 회사별 보기 + 활성(running/waiting) + 선택 프로젝트. agents.json 미변경.
   const agents = useMemo(() => {
-    if (!companyView || companyView === '__all__') return agentsAll;
-    if (companyView === '__unmapped__') return agentsAll.filter((a) => !(a.id in agentCompanyMap));
-    return agentsAll.filter((a) => agentCompanyMap[a.id] === companyView);
-  }, [agentsAll, companyView, agentCompanyMap]);
+    const live = agentsAll
+      .filter((a) => ACTIVE_STATUSES.has(a.status))
+      .filter((a) => matchesProject({ projectPath: a.projectPath, projectId: a.id }));
+    if (!companyView || companyView === '__all__') return live;
+    if (companyView === '__unmapped__') return live.filter((a) => !(a.id in agentCompanyMap));
+    return live.filter((a) => agentCompanyMap[a.id] === companyView);
+  }, [agentsAll, companyView, agentCompanyMap, ACTIVE_STATUSES, matchesProject]);
 
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [focusedPanelId, setFocusedPanelId] = useState<string | null>(null);

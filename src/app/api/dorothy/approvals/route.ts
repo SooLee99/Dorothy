@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { resolveProjectRoot } from '@/lib/projectPaths';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 // Read-only: returns raw markdown for triplan approval queue/decisions.
-const APPROVALS_DIR = '/Users/soo/workspace/source-code/triplan/approvals';
+// C4-d — 경로는 companies.json 에서(literal 은 폴백만).
+const APPROVALS_DIR = path.join(resolveProjectRoot('triplan') ?? '/Users/soo/workspace/source-code/triplan', 'approvals');
 
 function safeRead(file: string): string | null {
   try {

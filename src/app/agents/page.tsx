@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { Bot, Loader2, Search, ArrowUpDown, Building2 } from 'lucide-react';
+import { Bot, Loader2, Search, ArrowUpDown, Building2, FolderKanban } from 'lucide-react';
 import { useElectronAgents, useElectronFS, useElectronSkills, isElectron } from '@/hooks/useElectron';
+import { useProjectScope } from '@/lib/useProjectScope'; // 재설계 ②-a — 전역 프로젝트 스위처 필터
+import DomainTabs, { AGENT_DOMAIN } from '@/components/DomainTabs'; // 재설계 ②-b — 에이전트 도메인 탭
 import { useElectronTemplates } from '@/hooks/useElectronTemplates';
 import { useClaude } from '@/hooks/useClaude';
 import { useAgentFiltering } from '@/hooks/useAgentFiltering';
@@ -68,6 +70,14 @@ export default function AgentsPage() {
     sortBy,
   });
 
+  // 재설계 ②-a — 전역 프로젝트 스위처를 기존 필터 위에 AND 로 추가(식별자: agent.projectPath).
+  // 정합성 C2-c — resolveProjectId/projects 로 프로젝트→역할 2단 그룹.
+  const { matches: matchesProject, resolveProjectId, projects: scopeProjects } = useProjectScope();
+  const scopedAgents = useMemo(
+    () => filteredAgents.filter((a) => matchesProject({ projectPath: a.projectPath })),
+    [filteredAgents, matchesProject],
+  );
+
   const runningCount = agents.filter(a => a.status === 'running' || a.status === 'waiting').length;
 
   // --- 회사별 격리 (company isolation) ---
@@ -107,11 +117,11 @@ export default function AgentsPage() {
 
   const { companyAgents, unmappedAgents, isAllView } = useMemo(() => {
     const isAll = companyView === '__all__' || !companyView;
-    if (isAll) return { companyAgents: filteredAgents, unmappedAgents: [], isAllView: true };
-    const inCompany = filteredAgents.filter((a) => agentCompanyMap[a.id] === companyView);
-    const unmapped = filteredAgents.filter((a) => !(a.id in agentCompanyMap));
+    if (isAll) return { companyAgents: scopedAgents, unmappedAgents: [], isAllView: true };
+    const inCompany = scopedAgents.filter((a) => agentCompanyMap[a.id] === companyView);
+    const unmapped = scopedAgents.filter((a) => !(a.id in agentCompanyMap));
     return { companyAgents: inCompany, unmappedAgents: unmapped, isAllView: false };
-  }, [filteredAgents, agentCompanyMap, companyView]);
+  }, [scopedAgents, agentCompanyMap, companyView]);
 
   const currentCompanyName =
     companyInfo.companies.find((c) => c.id === companyView)?.name ?? companyView;
@@ -134,7 +144,8 @@ export default function AgentsPage() {
   );
 
   // Phase 6-AM — 역할별 그룹: 개발 / 계획·검증 / 운영·보고 (그 외=기타).
-  const ROLE_DEV = ['backend', 'frontend'];
+  // 정합성 C2 — bueongi 개발 에이전트도 '개발'로(이전엔 '기타'로 떨어졌음).
+  const ROLE_DEV = ['backend', 'frontend', 'bueongi-backend', 'bueongi-dev'];
   const ROLE_OPS = ['devops-reporter'];
   const ROLE_PLAN = ['intake-planner', 'architect-plan', 'orchestrator', 'plan-validator', 'contract-agent', 'database-agent', 'qa-reviewer', 'security-reviewer'];
   const renderRoleGrouped = (list: typeof filteredAgents) => {
@@ -156,6 +167,36 @@ export default function AgentsPage() {
         <Section title="계획·검증 에이전트" desc="요구사항 정리·작업 배분·설계·검증 담당 · Codex 기반 자동 진행" items={plan} />
         <Section title="운영·보고 에이전트" desc="결과 보고서·운영 문서·배포 준비 정리" items={ops} />
         <Section title="기타 에이전트" desc="기준선 11개 외 에이전트" items={other} />
+      </div>
+    );
+  };
+
+  // 정합성 C2-c — 프로젝트(1차) → 역할(2차) 2단 그룹. 1차 키는 agent.projectPath 를
+  //   useProjectScope.resolveProjectId 로 정규화(9가지 변형 흡수). 미해석은 '미분류'.
+  const renderByProject = (list: typeof filteredAgents) => {
+    const byProject = new Map<string, typeof filteredAgents>();
+    for (const a of list) {
+      const pid = resolveProjectId({ projectPath: a.projectPath, projectId: a.id }) ?? '__unresolved__';
+      if (!byProject.has(pid)) byProject.set(pid, []);
+      byProject.get(pid)!.push(a);
+    }
+    // 정렬: 알려진 프로젝트(capsule 순) 먼저, 미분류 마지막.
+    const order = [...scopeProjects.map((p) => p.projectId), '__unresolved__'];
+    const keys = [...byProject.keys()].sort((x, y) => order.indexOf(x) - order.indexOf(y));
+    const nameOf = (pid: string) =>
+      pid === '__unresolved__' ? '미분류 (프로젝트 매핑 없음)' : scopeProjects.find((p) => p.projectId === pid)?.name || pid;
+    return (
+      <div className="space-y-8">
+        {keys.map((pid) => (
+          <section key={pid}>
+            <div className="flex items-center gap-2 mb-3 pb-1.5 border-b border-border">
+              <FolderKanban className="w-4 h-4 text-primary" />
+              <h2 className="text-base font-semibold text-foreground">{nameOf(pid)}</h2>
+              <span className="text-xs text-muted-foreground">({byProject.get(pid)!.length})</span>
+            </div>
+            {renderRoleGrouped(byProject.get(pid)!)}
+          </section>
+        ))}
       </div>
     );
   };
@@ -312,6 +353,7 @@ export default function AgentsPage() {
 
   return (
     <div className="h-[calc(100vh-7rem)] lg:h-[calc(100vh-3rem)] flex flex-col pt-4 lg:pt-6">
+      <DomainTabs tabs={AGENT_DOMAIN} title="에이전트" bare />
       <AgentListHeader
         superAgent={superAgent}
         isCreatingSuperAgent={isCreatingSuperAgent}
@@ -447,7 +489,7 @@ export default function AgentsPage() {
             <AgentRegistryPanel />
           </div>
         </details>
-        {filteredAgents.length === 0 ? (
+        {scopedAgents.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20">
             <Bot className="w-12 h-12 text-muted-foreground/30 mb-4" />
             <p className="text-muted-foreground text-sm mb-2">
@@ -470,7 +512,7 @@ export default function AgentsPage() {
             )}
           </div>
         ) : isAllView ? (
-          renderRoleGrouped(filteredAgents)
+          renderByProject(scopedAgents)
         ) : (
           <div className="space-y-5">
             <section>

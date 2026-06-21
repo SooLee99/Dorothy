@@ -139,6 +139,10 @@ function getCompanies() {
       companyId: (m.companyId as string) ?? null,
       roleId: (m.roleId as string) ?? null,
       name: (m.name as string) ?? null,
+      // 정합성 C1-b — UI 가 프로젝트별 그룹을 만들 수 있도록 projectId/subProjectId 보존
+      //   (이전엔 여기서 버려져 /agents 등이 프로젝트 그룹을 못 만들었음).
+      projectId: (m.projectId as string) ?? null,
+      subProjectId: (m.subProjectId as string) ?? null,
     }));
   return {
     selectedCompanyId: d.selectedCompanyId ?? null,
