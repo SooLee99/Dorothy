@@ -38,18 +38,25 @@ const ROLE_REPOS: Record<string, string[]> = {
 
 // Phase 6-AX — 현재 11개 기준선 에이전트(슬러그). 구 companies.json 매핑(pm/docs/ops/cost…)은
 // 폐기 모델이라 더 이상 쓰지 않고, agents.json·라이브 스냅샷과 동일한 슬러그로 구성한다.
+// 여행(triplan) 코드/설계 에이전트만. 메타/인프라(orchestrator·intake-planner·plan-validator·
+//   devops-reporter)는 전체 운영용이라 DOROTHY_AGENTS 로 분리(사용자 요청 2026-06-21).
 const BASELINE_AGENTS: { roleId: string; name: string; repos: string[]; reportDirs: string[] }[] = [
-  { roleId: 'intake-planner', name: '요구 정리 (Intake)', repos: [], reportDirs: ['intake-planner'] },
   { roleId: 'architect-plan', name: '아키텍트 (설계)', repos: ['triplan-travel-service', 'triplan-frontend'], reportDirs: ['architect-plan'] },
-  { roleId: 'plan-validator', name: '계획 검증', repos: [], reportDirs: ['plan-validator'] },
   { roleId: 'contract-agent', name: 'API 계약', repos: ['triplan-travel-service', 'triplan-frontend'], reportDirs: ['contract-agent'] },
   { roleId: 'database-agent', name: '데이터 모델', repos: ['triplan-travel-service'], reportDirs: ['database-agent'] },
   { roleId: 'backend', name: '백엔드 개발자', repos: ['triplan-travel-service', 'soo-auth-service'], reportDirs: ['backend'] },
   { roleId: 'frontend', name: '프론트엔드 개발자', repos: ['triplan-frontend'], reportDirs: ['frontend'] },
   { roleId: 'qa-reviewer', name: 'QA 리뷰어', repos: ['triplan-travel-service', 'triplan-frontend'], reportDirs: ['qa-reviewer', 'qa'] },
   { roleId: 'security-reviewer', name: '보안 리뷰어', repos: ['triplan-travel-service', 'triplan-frontend', 'soo-auth-service'], reportDirs: ['security-reviewer', 'security'] },
-  { roleId: 'devops-reporter', name: '데브옵스 / 리포터', repos: ['triplan-travel-service', 'soo-auth-service'], reportDirs: ['devops-reporter', 'devops', 'ops'] },
+];
+
+// Dorothy(대시보드·인프라) 에이전트 — 전체 운영용(조율·기획·승인·보고). triplan 에서 이동.
+//   활동(리포트/커밋)은 실제 실행 위치(triplan 팀루프)서 집계하되 분류만 Dorothy.
+const DOROTHY_AGENTS: { roleId: string; name: string; repos: string[]; reportDirs: string[] }[] = [
   { roleId: 'orchestrator', name: '오케스트레이터 (조율)', repos: ['triplan-travel-service', 'triplan-frontend', 'soo-auth-service'], reportDirs: ['orchestrator'] },
+  { roleId: 'intake-planner', name: '요구 정리 (Intake)', repos: [], reportDirs: ['intake-planner'] },
+  { roleId: 'plan-validator', name: '계획 검증', repos: [], reportDirs: ['plan-validator'] },
+  { roleId: 'devops-reporter', name: '데브옵스 / 리포터', repos: ['triplan-travel-service', 'soo-auth-service'], reportDirs: ['devops-reporter', 'devops', 'ops'] },
 ];
 
 // 정합성 C2-b — bueongi 전용 에이전트(이전엔 triplan BASELINE 하드코딩이라 화면에서 누락).
@@ -66,6 +73,8 @@ const BUEONGI_AGENTS: { roleId: string; name: string; repos: string[]; reportDir
 const PROJECTS: { projectId: string; root: string; agents: typeof BASELINE_AGENTS; docPaths: Record<string, string[]> }[] = [
   { projectId: 'triplan', root: TRIPLAN_ROOT, agents: BASELINE_AGENTS, docPaths: ROLE_DOC_PATHS },
   { projectId: 'bueongi', root: BUEONGI_ROOT, agents: BUEONGI_AGENTS, docPaths: {} },
+  // Dorothy(대시보드·인프라) — 메타 에이전트는 triplan 팀루프에서 실행되므로 활동 집계 root 는 triplan.
+  { projectId: 'dorothy', root: TRIPLAN_ROOT, agents: DOROTHY_AGENTS, docPaths: {} },
 ];
 
 function safeReadJson<T = unknown>(p: string): T | null {

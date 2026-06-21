@@ -56,8 +56,8 @@ function projectGroupKey(task: KanbanTask): string {
   const pp = typeof task.projectPath === 'string' ? task.projectPath.trim() : '';
   const pid = typeof task.projectId === 'string' ? task.projectId.trim() : '';
   const hay = `${pp} ${pid}`.toLowerCase();
-  // 비프로젝트(대시보드 앱/런타임 설정)는 프로젝트 그룹이 아님 → 미분류.
-  if (hay.includes('dorothy')) return 'unknown';
+  // Dorothy 대시보드·인프라 작업 → 별도 그룹(triplan/bueongi 와 섞이지 않게).
+  if (hay.includes('dorothy')) return 'dorothy';
   if (hay.includes('triplan') || hay.includes('soo-auth') || hay.includes('travel-service')) return 'triplan';
   if (
     hay.includes('bueongi') || hay.includes('부엉') ||
@@ -76,6 +76,7 @@ function projectGroupKey(task: KanbanTask): string {
 const PROJECT_LABELS: Record<string, string> = {
   'triplan': 'triplan (여행)',
   'bueongi': 'bueongi (부엉이·안심귀가)',
+  'dorothy': 'Dorothy (대시보드·인프라)',
   'unknown': '미분류',
 };
 function projectGroupLabel(key: string): string {

@@ -337,7 +337,7 @@ export function NewTaskModal({ onClose, onCreate, initialProjectPath }: NewTaskM
                 <textarea
                   value={quickPrompt}
                   onChange={(e) => setQuickPrompt(e.target.value)}
-                  placeholder="Describe your task in natural language...&#10;&#10;e.g., Fix the login bug on the dorothy project where users can't sign in with Google"
+                  placeholder="할 일을 자연어로 설명하세요 (마크다운 지원: ## 섹션, - 목록, - [ ] 체크리스트)&#10;&#10;예: dorothy 프로젝트에서 구글 로그인이 안 되는 버그 수정"
                   rows={5}
                   className="w-full px-3 py-2 bg-secondary border border-border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary resize-none"
                   autoFocus
@@ -591,7 +591,7 @@ export function NewTaskModal({ onClose, onCreate, initialProjectPath }: NewTaskM
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Detailed instructions for the agent..."
+                  placeholder="에이전트 상세 지시 — 마크다운 지원 (## 섹션, - 목록, - [ ] 체크리스트, **강조**, `코드`)"
                   rows={3}
                   className="w-full px-3 py-2 bg-secondary border border-border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary resize-none"
                 />

@@ -36,11 +36,24 @@ function CheckItems({ items }: { items: string[] }) {
 }
 
 export default function StructuredPrompt({ body }: { body: string }) {
-  const blocks = parsePrompt(body);
+  let blocks = parsePrompt(body);
   if (!body?.trim()) return <p className="text-xs text-muted-foreground">(설명/프롬프트 없음)</p>;
   let lastHeadingChecklist = false; // 직전 헤딩이 체크리스트류면 다음 목록을 체크박스로
+  // ★"한눈에" 쉬운 요약을 눈에 띄는 콜아웃으로(기술적 본문과 분리). 첫 헤딩이 한눈에면 분리.
+  let hint = '';
+  if (blocks[0]?.type === 'heading' && /^한눈에/.test(blocks[0].text) && blocks[1]?.type === 'para') {
+    hint = (blocks[1] as { type: 'para'; text: string }).text;
+    blocks = blocks.slice(2);
+  }
   return (
     <div className="space-y-3 text-sm">
+      {hint && (
+        <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-primary mb-1">한눈에 · 쉬운 설명</div>
+          <p className="text-[13px] leading-relaxed text-foreground">{renderInline(hint)}</p>
+        </div>
+      )}
+      {blocks.length > 0 && hint && <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 pt-1">상세 (원본 스펙)</div>}
       {blocks.map((b, i) => {
         if (b.type === 'heading') {
           lastHeadingChecklist = CHECKLIST_HEAD.test(b.text);

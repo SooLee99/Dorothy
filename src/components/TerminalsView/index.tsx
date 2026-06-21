@@ -59,10 +59,13 @@ export default function TerminalsView({
   const ACTIVE_STATUSES = useMemo(() => new Set(['running', 'waiting']), []);
   // 모니터링 — 전역 ProjectSwitcher 로 프로젝트별 필터(resolveProjectId 정규화·서브프로젝트 통합).
   const { matches: matchesProject } = useProjectScope();
-  // 회사별 보기 + 활성(running/waiting) + 선택 프로젝트. agents.json 미변경.
+  // 오케스트레이터(조율) 에이전트는 ★기본적으로 표시(idle 이어도) — 모니터링서 조율자가 항상 보이게.
+  const isOrchestrator = (a: { id?: string; name?: string }) =>
+    /orchestrator/i.test(a.id ?? '') || /orchestrator|오케스트레이터/i.test(a.name ?? '');
+  // 회사별 보기 + 활성(running/waiting)+오케스트레이터 + 선택 프로젝트. agents.json 미변경.
   const agents = useMemo(() => {
     const live = agentsAll
-      .filter((a) => ACTIVE_STATUSES.has(a.status))
+      .filter((a) => ACTIVE_STATUSES.has(a.status) || isOrchestrator(a))
       .filter((a) => matchesProject({ projectPath: a.projectPath, projectId: a.id }));
     if (!companyView || companyView === '__all__') return live;
     if (companyView === '__unmapped__') return live.filter((a) => !(a.id in agentCompanyMap));

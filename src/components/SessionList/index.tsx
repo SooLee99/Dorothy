@@ -139,9 +139,12 @@ export default function SessionList() {
     return undefined;
   };
 
+  // 에이전트 터미널에서 Dorothy 대시보드(메타/인프라) 에이전트는 제외 — 프로젝트 작업 터미널만.
+  const DOROTHY_AGENTS = useMemo(() => new Set(['orchestrator', 'intake-planner', 'plan-validator', 'devops-reporter']), []);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return sessions.filter(s => {
+      if (DOROTHY_AGENTS.has((s.agentId ?? '').toLowerCase())) return false;
       if (statusFilter !== 'all' && statusFilter !== 'active') {
         if (s.endStatus !== statusFilter) return false;
       }
@@ -154,7 +157,7 @@ export default function SessionList() {
       }
       return true;
     });
-  }, [sessions, statusFilter, providerFilter, query]);
+  }, [sessions, statusFilter, providerFilter, query, DOROTHY_AGENTS]);
 
   const providerOptions = useMemo(() => {
     const set = new Set<string>();

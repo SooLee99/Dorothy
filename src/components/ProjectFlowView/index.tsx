@@ -10,7 +10,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { FileText, Users, Activity, FlaskConical, Plus, AlertCircle, CheckCircle2, XCircle, Circle, CircleDot, GitCommit, MessageSquare, TerminalSquare, Server as ServerIcon } from 'lucide-react';
+import { FileText, Users, Activity, FlaskConical, Plus, AlertCircle, CheckCircle2, XCircle, Circle, CircleDot, GitCommit, MessageSquare, TerminalSquare, Server as ServerIcon, ChevronRight } from 'lucide-react';
 import { useStore } from '@/store';
 import DetailModal from '@/components/DetailModal';
 import { NewTaskModal } from '@/components/KanbanBoard/components/NewTaskModal';
@@ -18,10 +18,11 @@ import { useElectronKanban } from '@/hooks/useElectronKanban';
 import StructuredPrompt, { InlineMd } from './StructuredPrompt';
 import { promptSummary, promptSections } from '@/lib/parsePrompt';
 
-type GroupKey = 'triplan' | 'bueongi';
+type GroupKey = 'triplan' | 'bueongi' | 'dorothy';
 const PROJECTS: { id: GroupKey; label: string; rootPath: string }[] = [
   { id: 'triplan', label: 'triplan (여행)', rootPath: '/Users/soo/workspace/source-code/triplan' },
   { id: 'bueongi', label: 'bueongi (부엉이·안심귀가)', rootPath: '/Users/soo/workspace/source-code/apps/bueongi' },
+  { id: 'dorothy', label: 'Dorothy (대시보드·인프라)', rootPath: '/Users/soo/ai-company-stack/Dorothy' },
 ];
 
 // 역할 슬러그 → 사람이 이해하는 한국어(⑤ 라이브 표시).
@@ -33,16 +34,26 @@ const ROLE_KO: Record<string, string> = {
   'bueongi-backend': '백엔드', 'bueongi-dev': '개발',
 };
 
-// 칸반 projectGroupKey 와 동일한 키워드 정규화(raw 태그·경로·자유텍스트 → 프로젝트).
-function flowGroupKey(hay: string): GroupKey | null {
-  const h = (hay || '').toLowerCase();
+// 프로젝트 판정 — ★projectId/projectPath(명시적) 우선, 그 다음 제목/본문 키워드 폴백.
+//   (Dorothy 대시보드 태스크가 본문에 'triplan'을 언급해도 projectId=Dorothy 면 dorothy 로.)
+function matchKey(s: string): GroupKey | null {
+  const h = (s || '').toLowerCase();
+  if (h.includes('dorothy')) return 'dorothy';
   if (h.includes('triplan') || h.includes('soo-auth') || h.includes('travel-service')) return 'triplan';
   if (h.includes('bueongi') || h.includes('부엉') || h.includes('안심귀가') || h.includes('ansim') || h.includes('safe-return') || h.includes('frontend-src')) return 'bueongi';
   return null;
 }
+function flowGroupKey(t: { projectId?: string; projectPath?: string; title?: string; description?: string }): GroupKey | null {
+  // 1) 명시적 식별자 우선(섞임 방지)
+  const byId = matchKey(`${t.projectId ?? ''} ${t.projectPath ?? ''}`);
+  if (byId) return byId;
+  // 2) 제목/본문 키워드 폴백(식별자 모호할 때만)
+  return matchKey(`${t.title ?? ''} ${t.description ?? ''}`);
+}
 
-interface KanbanTask { id: string; title: string; description?: string; projectId?: string; projectPath?: string; column?: string; assignedAgentId?: string | null; requiredSkills?: string[]; priority?: string; }
-interface ActAgent { agentId: string; roleId: string; name: string; status: string; projectId?: string; reports?: unknown[]; recentCommits?: unknown[]; outputTail?: string; currentTask?: string | null; statusLine?: string | null; lastActivity?: string | null; }
+interface KanbanTask { id: string; title: string; description?: string; projectId?: string; projectPath?: string; column?: string; assignedAgentId?: string | null; requiredSkills?: string[]; priority?: string; updatedAt?: string; }
+interface AgentReport { path: string; relPath?: string; mtime?: string; sizeBytes?: number }
+interface ActAgent { agentId: string; roleId: string; name: string; status: string; projectId?: string; reports?: AgentReport[]; recentCommits?: unknown[]; outputTail?: string; currentTask?: string | null; statusLine?: string | null; lastActivity?: string | null; }
 interface Probe { up?: boolean; port?: number; reason?: string }
 interface ProjSvc { projectId?: string; fe?: Probe | null; be?: Probe | null; capsule?: { frontendPort?: number | null; backendPort?: number | null } }
 
@@ -51,13 +62,16 @@ export default function ProjectFlowView() {
   const setSelectedProject = useStore((s) => s.setSelectedProject);
   const { createTask } = useElectronKanban();
 
-  const initial: GroupKey = (storeSelected && flowGroupKey(storeSelected)) || 'triplan';
+  const initial: GroupKey = (storeSelected && matchKey(storeSelected)) || 'triplan';
   const [active, setActive] = useState<GroupKey>(initial);
   const [tasks, setTasks] = useState<KanbanTask[]>([]);
   const [agents, setAgents] = useState<ActAgent[]>([]);
   const [tests, setTests] = useState<{ ok?: boolean; runs?: unknown[]; repo?: string; error?: string } | null>(null);
   const [services, setServices] = useState<ProjSvc[] | null>(null); // #3 서비스 상태(fe/be 프로브)
   const [promptTask, setPromptTask] = useState<KanbanTask | null>(null);
+  const [agentDetail, setAgentDetail] = useState<ActAgent | null>(null); // ② 에이전트 활동 드릴다운
+  const [reportView, setReportView] = useState<{ title: string; path: string } | null>(null); // ③ 진행내역 리포트 보기
+  const [reportText, setReportText] = useState<string>('');
   const [showNewTask, setShowNewTask] = useState(false);
   const [loading, setLoading] = useState(true);
   // 가독성 — 상태 필터 + 더보기(카드 많을 때).
@@ -102,7 +116,7 @@ export default function ProjectFlowView() {
 
   // 프로젝트별 필터(키워드 정규화로 견고하게).
   const projTasks = useMemo(
-    () => tasks.filter((t) => flowGroupKey(`${t.projectId ?? ''} ${t.projectPath ?? ''} ${t.title ?? ''} ${t.description ?? ''}`) === active),
+    () => tasks.filter((t) => flowGroupKey(t) === active),
     [tasks, active],
   );
   // 역할 로스터 — agentId 중복 제거(같은 ops 가 여러 번 와도 1개). 중복 key 에러 방지.
@@ -127,6 +141,20 @@ export default function ProjectFlowView() {
   const assignedCount = projTasks.filter((t) => t.assignedAgentId).length;
   const totalReports = projAgents.reduce((s, a) => s + (a.reports?.length ?? 0), 0);
   const proj = PROJECTS.find((p) => p.id === active)!;
+
+  // ③ 진행 내역 타임라인 — 완료 태스크 + 에이전트 리포트를 시간순 병합("무엇을 언제 했나").
+  const progressFeed = useMemo(() => {
+    const items: { when: string; kind: 'task' | 'report'; label: string; path?: string }[] = [];
+    for (const t of projTasks) if ((t.column === 'done' || t.column === 'completed') && t.updatedAt) items.push({ when: t.updatedAt, kind: 'task', label: t.title });
+    for (const a of projAgents) for (const r of (a.reports ?? [])) if (r.mtime) items.push({ when: r.mtime, kind: 'report', label: `${a.roleId} · ${reportTitle(r)}`, path: r.path });
+    return items.sort((x, y) => new Date(y.when).getTime() - new Date(x.when).getTime()).slice(0, 20);
+  }, [projTasks, projAgents]);
+  useEffect(() => {
+    if (!reportView) return;
+    setReportText('');
+    fetch('/api/dorothy/doc', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: reportView.path }) })
+      .then((r) => r.json()).then((d) => setReportText(d.content || '(내용 없음)')).catch(() => setReportText('(불러오기 실패)'));
+  }, [reportView]);
 
   return (
     <div className="space-y-4 pt-4 lg:pt-6 max-w-[1100px] mx-auto">
@@ -190,7 +218,12 @@ export default function ProjectFlowView() {
                 return (
                   <button key={t.id} onClick={() => setPromptTask(t)} className={`text-left p-3 pl-3.5 rounded-xl border border-border/60 border-l-[3px] ${stripe} hover:border-primary/40 hover:bg-secondary/40 transition-colors flex flex-col gap-2`}>
                     <span className="text-[13px] font-semibold text-foreground line-clamp-2 leading-snug"><InlineMd text={t.title} /></span>
-                    <StatusSteps column={t.column} />
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <StatusSteps column={t.column} />
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${t.assignedAgentId ? 'bg-primary/10 text-primary' : 'bg-secondary text-muted-foreground/60'}`}>
+                        담당: {t.assignedAgentId || '미배정'}
+                      </span>
+                    </div>
                     {summary ? <span className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed"><InlineMd text={summary} /></span>
                       : <span className="text-[11px] text-muted-foreground/60 italic">내용 없음</span>}
                     {chips.length > 0 && (
@@ -221,10 +254,12 @@ export default function ProjectFlowView() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
             {projAgents.map((a, i) => (
-              <div key={`${a.agentId}-${i}`} className="flex items-center gap-2 p-2 rounded-lg border border-border/60 text-xs">
+              <button key={`${a.agentId}-${i}`} onClick={() => setAgentDetail(a)}
+                className="flex items-center gap-2 p-2 rounded-lg border border-border/60 hover:border-primary/40 hover:bg-secondary/40 transition-colors text-xs text-left">
                 <span className="font-medium text-foreground truncate flex-1">{a.name}<span className="text-muted-foreground ml-1">· {a.roleId}</span></span>
                 <span className="text-[10px] text-muted-foreground shrink-0">리포트 {a.reports?.length ?? 0}</span>
-              </div>
+                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+              </button>
             ))}
           </div>
         )}
@@ -246,7 +281,35 @@ export default function ProjectFlowView() {
             </div>
           </>
         )}
-        <Honest>세밀 실행 타임라인(runs/events)은 희소합니다 — 자세한 진행은 <Link href="/agent-activity" className="text-primary hover:underline">에이전트 활동</Link>·<Link href="/kanban" className="text-primary hover:underline">칸반</Link>에서.</Honest>
+        {/* 진행 내역 — 무엇을 언제 했나(완료 태스크 + 에이전트 리포트 시간순) */}
+        <div className="mt-3 border-t border-border pt-2">
+          <div className="text-[11px] font-semibold text-foreground mb-1.5">진행 내역 (최근 {progressFeed.length})</div>
+          {progressFeed.length === 0 ? (
+            <Empty>아직 완료된 작업·리포트 기록이 없습니다.</Empty>
+          ) : (
+            <ol className="relative border-l border-border ml-1.5 space-y-1.5">
+              {progressFeed.map((it, i) => (
+                <li key={i} className="ml-3 relative">
+                  <span className={`absolute -left-[1.05rem] top-1.5 w-2 h-2 rounded-full ring-2 ring-card ${it.kind === 'task' ? 'bg-emerald-500' : 'bg-primary/60'}`} />
+                  {it.kind === 'report' && it.path ? (
+                    <button onClick={() => setReportView({ title: it.label, path: it.path! })} className="w-full text-left flex items-baseline gap-2 hover:bg-secondary/40 rounded px-1 py-0.5">
+                      <span className="text-[11px] text-primary shrink-0">📄</span>
+                      <span className="text-[12px] text-foreground flex-1 break-words">{it.label}</span>
+                      <span className="text-[10px] text-muted-foreground shrink-0">{new Date(it.when).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}</span>
+                    </button>
+                  ) : (
+                    <div className="flex items-baseline gap-2 px-1 py-0.5">
+                      <span className="text-[11px] text-emerald-500 shrink-0">✅</span>
+                      <span className="text-[12px] text-foreground/90 flex-1 break-words">{it.label}</span>
+                      <span className="text-[10px] text-muted-foreground shrink-0">{new Date(it.when).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}</span>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+        <Honest>완료 태스크 + 에이전트 리포트 기준. 📄 리포트는 클릭하면 내용(어떻게)을 봅니다. 태스크별 세밀 runs/events 는 희소.</Honest>
       </Section>
 
       {/* ④ 테스트 — 정직: 프로젝트 레벨만 */}
@@ -312,10 +375,18 @@ export default function ProjectFlowView() {
       <DetailModal open={!!promptTask} onClose={() => setPromptTask(null)} title={promptTask?.title ?? ''} subtitle={`${active} · ${promptTask?.column ?? ''}`} widthClass="max-w-2xl">
         {promptTask && (
           <div className="space-y-4">
-            {/* 진행 단계 */}
-            <StatusSteps column={promptTask.column} />
+            {/* 진행 단계 + 담당(누구에게 시켰나) */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <StatusSteps column={promptTask.column} />
+              <span className={`text-[11px] px-2 py-0.5 rounded ${promptTask.assignedAgentId ? 'bg-primary/10 text-primary' : 'bg-secondary text-muted-foreground/60'}`}>
+                담당: {promptTask.assignedAgentId || '미배정'}
+              </span>
+            </div>
             {promptTask.requiredSkills && promptTask.requiredSkills.length > 0 && (
-              <div className="flex flex-wrap gap-1">{promptTask.requiredSkills.map((s) => <span key={s} className="text-[10px] px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">{s}</span>)}</div>
+              <div>
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">필요 스킬</span>
+                <div className="flex flex-wrap gap-1 mt-0.5">{promptTask.requiredSkills.map((s) => <span key={s} className="text-[10px] px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">{s}</span>)}</div>
+              </div>
             )}
             {/* 구조화 프롬프트(날것 X) */}
             <div className="border-t border-border pt-3"><StructuredPrompt body={promptTask.description ?? ''} /></div>
@@ -323,6 +394,18 @@ export default function ProjectFlowView() {
             <div className="border-t border-border pt-3"><TaskTimeline taskId={promptTask.id} /></div>
           </div>
         )}
+      </DetailModal>
+
+      {/* ② 에이전트 활동 — 역할·언제·어떻게(리포트 타임라인) */}
+      <DetailModal open={!!agentDetail} onClose={() => setAgentDetail(null)}
+        title={agentDetail ? `${agentDetail.name} · ${agentDetail.roleId}` : ''}
+        subtitle={agentDetail ? `${active} · 리포트 ${agentDetail.reports?.length ?? 0}건 (언제·무엇·어떻게)` : undefined} widthClass="max-w-2xl">
+        {agentDetail && <AgentReportList agent={agentDetail} />}
+      </DetailModal>
+
+      {/* ③ 진행 내역 리포트 내용(어떻게) */}
+      <DetailModal open={!!reportView} onClose={() => setReportView(null)} title={reportView?.title ?? '리포트'} subtitle="에이전트 리포트 내용" widthClass="max-w-2xl">
+        {reportText ? <StructuredPrompt body={reportText} /> : <p className="text-[11px] text-muted-foreground">불러오는 중…</p>}
       </DetailModal>
 
       {/* 업무 추가(재사용 NewTaskModal·이 프로젝트 자동 선택) */}
@@ -449,32 +532,43 @@ function AgentLogTail({ project, role }: { project: string; role: string }) {
   );
 }
 
-// 이벤트 타입 → 사람이 이해하는 한국어(기술 용어 X).
-const EVENT_KO: Record<string, string> = {
-  created: '업무 생성됨', claimed: '담당자 배정', assigned: '담당자 배정', started: '작업 시작',
-  comment: '코멘트 남김', commented: '코멘트 남김', run_started: '실행 시작', run_completed: '실행 완료',
-  completed: '완료됨', done: '완료됨', blocked: '막힘 발생', unblocked: '막힘 해제',
-  moved: '단계 이동', status_changed: '상태 변경', archived: '보관됨', heartbeat: '진행 신호',
+// 이벤트 kind → 사람이 이해하는 한국어 + 설명(어떤 이벤트인지).
+const EVENT_DESC: Record<string, { ko: string; desc: string }> = {
+  created: { ko: '업무 생성됨', desc: '칸반에 카드로 등록' },
+  promoted: { ko: '단계 승격됨', desc: '다음 컬럼으로 이동(예: 대기→준비)' },
+  claimed: { ko: '담당자 배정', desc: '워커가 이 업무를 가져감' },
+  started: { ko: '작업 시작', desc: '실행 시작' },
+  run_started: { ko: '실행 시작', desc: '에이전트 실행 시작' },
+  run_completed: { ko: '실행 완료', desc: '에이전트 실행 끝' },
+  completed: { ko: '완료됨', desc: '업무 done' },
+  blocked: { ko: '막힘 발생', desc: '진행 불가(차단)' },
+  unblocked: { ko: '막힘 해제', desc: '다시 진행 가능' },
+  comment: { ko: '코멘트', desc: '메모 추가' },
+  archived: { ko: '보관됨', desc: '아카이브' },
 };
-function eventKo(type?: string): string {
-  if (!type) return '이벤트';
-  return EVENT_KO[type] ?? type.replace(/_/g, ' ');
+function eventKo(kind?: string): { ko: string; desc: string } {
+  if (!kind) return { ko: '이벤트', desc: '' };
+  return EVENT_DESC[kind] ?? { ko: kind.replace(/_/g, ' '), desc: '' };
 }
-function fmtWhen(iso?: string): string {
-  if (!iso) return '';
-  const d = new Date(iso);
+// unix 초(int) 또는 ISO 문자열 → 상대/절대 시간.
+function fmtWhen(v?: number | string): string {
+  if (v === undefined || v === null) return '';
+  const d = typeof v === 'number' ? new Date(v * 1000) : new Date(/^\d+$/.test(v) ? Number(v) * 1000 : v);
   if (Number.isNaN(d.getTime())) return '';
-  const diff = Date.now() - d.getTime();
-  const m = Math.round(diff / 60000);
+  const m = Math.round((Date.now() - d.getTime()) / 60000);
   if (m < 1) return '방금';
   if (m < 60) return `${m}분 전`;
   if (m < 1440) return `${Math.floor(m / 60)}시간 전`;
   return d.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }) + ' ' + d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
 }
 
-// 업무별 타임라인 — kanban-detail(hermes kanban show) events 를 ★시간순·사람 말로. 없으면 정직히 표기.
+interface KRun { profile?: string; step_key?: string; status?: string; outcome?: string; summary?: string; started_at?: number; ended_at?: number; worker_pid?: number; error?: string }
+interface KEvent { kind?: string; payload?: string | null; created_at?: number; run_id?: number | null }
+
+// 업무별 타임라인 — ★실행 추적(task_runs: 누가·상태·결과·요약) + 라이프사이클 이벤트(created/promoted).
+//   task_runs 는 워커가 태스크를 claim·실행할 때 기록됨. 비어 있으면 정직히 안내(가짜 X).
 function TaskTimeline({ taskId }: { taskId: string }) {
-  const [data, setData] = useState<{ runs?: unknown[]; events?: { type?: string; at?: string; created_at?: string }[]; comments?: unknown[]; error?: string } | null>(null);
+  const [data, setData] = useState<{ runs?: KRun[]; events?: KEvent[]; comments?: unknown[]; error?: string } | null>(null);
   useEffect(() => {
     let alive = true;
     fetch(`/api/dorothy/kanban-detail?taskId=${encodeURIComponent(taskId)}`, { cache: 'no-store' })
@@ -482,42 +576,106 @@ function TaskTimeline({ taskId }: { taskId: string }) {
     return () => { alive = false; };
   }, [taskId]);
 
-  const runs = data?.runs?.length ?? 0;
-  const comments = data?.comments?.length ?? 0;
-  const events = useMemo(() => {
-    const ev = [...(data?.events ?? [])];
-    ev.sort((a, b) => new Date(a.at ?? a.created_at ?? 0).getTime() - new Date(b.at ?? b.created_at ?? 0).getTime());
-    return ev;
-  }, [data]);
+  const runs = data?.runs ?? [];
+  const events = useMemo(() => [...(data?.events ?? [])].sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0)), [data]);
+
+  function payloadStatus(p?: string | null): string {
+    if (!p) return '';
+    try { const o = JSON.parse(p); return o.status ? ` → ${o.status}` : ''; } catch { return ''; }
+  }
 
   return (
-    <div>
-      <h4 className="text-xs font-semibold uppercase tracking-wide text-primary mb-2 flex items-center gap-1.5"><Activity className="w-3.5 h-3.5" /> 진행 타임라인</h4>
-      {!data ? <p className="text-[11px] text-muted-foreground">불러오는 중…</p>
-        : (runs === 0 && events.length === 0 && comments === 0) ? (
-          <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground/80"><AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" /> 아직 실행 기록이 없는 업무입니다 (진행 타임라인 없음).</p>
-        ) : (
-          <div>
-            <div className="flex gap-3 text-[11px] text-muted-foreground mb-2">
-              <span className="inline-flex items-center gap-1"><GitCommit className="w-3 h-3" /> 실행 {runs}회</span>
-              <span className="inline-flex items-center gap-1"><MessageSquare className="w-3 h-3" /> 코멘트 {comments}개</span>
-            </div>
-            {/* 시간순 세로 타임라인 */}
-            <ol className="relative border-l border-border ml-1.5 space-y-2.5">
-              {events.slice(0, 15).map((e, i) => (
-                <li key={i} className="ml-3 relative">
-                  <span className="absolute -left-[1.05rem] top-1 w-2 h-2 rounded-full bg-primary/70 ring-2 ring-card" />
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-[12px] text-foreground">{eventKo(e.type)}</span>
-                    <span className="text-[10px] text-muted-foreground ml-auto shrink-0">{fmtWhen(e.at ?? e.created_at)}</span>
+    <div className="space-y-3">
+      {/* 실행 추적(task_runs) — per-task 누가·어떻게 */}
+      <div>
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-primary mb-2 flex items-center gap-1.5"><Activity className="w-3.5 h-3.5" /> 실행 추적 (누가·어떻게)</h4>
+        {!data ? <p className="text-[11px] text-muted-foreground">불러오는 중…</p>
+          : runs.length === 0 ? (
+            <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground/80"><AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" /> 실행 기록(task_runs) 없음 — 워커가 이 업무를 claim·실행하면 담당·결과·요약이 여기 기록됩니다. (현재 cron 워커가 사용량 한도로 멈춰 있어 미생성)</p>
+          ) : (
+            <ol className="space-y-1.5">
+              {runs.map((r, i) => (
+                <li key={i} className="rounded-lg border border-border/60 p-2 text-[11px]">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${r.outcome === 'completed' ? 'bg-emerald-500' : r.status === 'running' ? 'bg-amber-500 animate-pulse' : 'bg-rose-500'}`} />
+                    <span className="font-medium text-foreground">{r.profile || r.step_key || '실행'}</span>
+                    <span className="text-muted-foreground">{r.outcome || r.status}</span>
+                    <span className="text-muted-foreground ml-auto">{fmtWhen(r.started_at)}</span>
                   </div>
+                  {r.summary && <p className="text-foreground/80 mt-1 break-words">{r.summary}</p>}
+                  {r.error && <p className="text-rose-500 mt-1 break-words">{r.error}</p>}
                 </li>
               ))}
             </ol>
-            {events.length > 15 && <p className="text-[10px] text-muted-foreground mt-2 ml-3">…외 {events.length - 15}건</p>}
-          </div>
+          )}
+      </div>
+      {/* 라이프사이클 이벤트 — 어떤 이벤트인지 설명 포함 */}
+      <div>
+        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70 mb-1.5">이벤트 ({events.length})</h4>
+        {events.length === 0 ? <p className="text-[11px] text-muted-foreground/70">이벤트 없음.</p> : (
+          <ol className="relative border-l border-border ml-1.5 space-y-2">
+            {events.slice(0, 15).map((e, i) => {
+              const k = eventKo(e.kind);
+              return (
+                <li key={i} className="ml-3 relative">
+                  <span className="absolute -left-[1.05rem] top-1 w-2 h-2 rounded-full bg-primary/60 ring-2 ring-card" />
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-[12px] text-foreground">{k.ko}{payloadStatus(e.payload)}</span>
+                    <span className="text-[10px] text-muted-foreground ml-auto shrink-0">{fmtWhen(e.created_at)}</span>
+                  </div>
+                  {k.desc && <span className="text-[10px] text-muted-foreground/70">{k.desc}</span>}
+                </li>
+              );
+            })}
+          </ol>
         )}
+      </div>
     </div>
+  );
+}
+
+// ② 에이전트 리포트 타임라인 — 언제(mtime)·무엇(제목)·어떻게(내용·doc API). 시간순 최신.
+function reportTitle(r: AgentReport): string {
+  const fn = (r.relPath || r.path).split('/').pop() || '';
+  return fn.replace(/\.md$/i, '').replace(/^\d+[_-]/, '').replace(/[-_]/g, ' ').trim() || fn;
+}
+function AgentReportList({ agent }: { agent: ActAgent }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const [content, setContent] = useState<Record<string, string>>({});
+  const reports = useMemo(
+    () => [...(agent.reports ?? [])].sort((a, b) => new Date(b.mtime ?? 0).getTime() - new Date(a.mtime ?? 0).getTime()),
+    [agent],
+  );
+  const toggle = async (r: AgentReport) => {
+    if (open === r.path) { setOpen(null); return; }
+    setOpen(r.path);
+    if (content[r.path] === undefined) {
+      setContent((c) => ({ ...c, [r.path]: '' })); // 로딩 표시
+      try {
+        const res = await fetch('/api/dorothy/doc', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: r.path }) }).then((x) => x.json());
+        setContent((c) => ({ ...c, [r.path]: res.content || '(내용 없음)' }));
+      } catch { setContent((c) => ({ ...c, [r.path]: '(불러오기 실패)' })); }
+    }
+  };
+  if (reports.length === 0) return <Empty>이 에이전트의 리포트 기록이 없습니다 (작업 산출 미기록).</Empty>;
+  return (
+    <ol className="relative border-l border-border ml-1.5 space-y-2">
+      {reports.map((r) => (
+        <li key={r.path} className="ml-3 relative">
+          <span className="absolute -left-[1.05rem] top-2 w-2 h-2 rounded-full bg-primary/60 ring-2 ring-card" />
+          <button onClick={() => toggle(r)} className="w-full text-left flex items-baseline gap-2 py-1 hover:bg-secondary/40 rounded px-1">
+            <span className="text-[12px] text-foreground flex-1 break-words">{reportTitle(r)}</span>
+            <span className="text-[10px] text-muted-foreground shrink-0">{r.mtime ? new Date(r.mtime).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}</span>
+            <ChevronRight className={`w-3 h-3 text-muted-foreground shrink-0 transition-transform ${open === r.path ? 'rotate-90' : ''}`} />
+          </button>
+          {open === r.path && (
+            <div className="mt-1 mb-2 border border-border/60 rounded-lg p-2 bg-secondary/20">
+              {content[r.path] === '' ? <p className="text-[11px] text-muted-foreground">불러오는 중…</p> : <StructuredPrompt body={content[r.path] ?? ''} />}
+            </div>
+          )}
+        </li>
+      ))}
+    </ol>
   );
 }
 

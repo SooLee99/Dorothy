@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import type { KanbanTask, KanbanColumn } from '@/types/kanban';
 import { getLabelColor } from '../constants';
+import { promptSummary } from '@/lib/parsePrompt'; // 카드 요약(raw 마크다운 기호 제거)
 import { taskStageShort } from './TaskProcessStage';
 
 interface KanbanCardProps {
@@ -158,10 +159,10 @@ export function KanbanCard({ task, onEdit, onDelete, onStart, onOpenTerminal, is
         {task.title}
       </h4>
 
-      {/* Description */}
+      {/* Description — 마크다운 기호 제거한 쉬운 요약(raw ## 노출 방지) */}
       {task.description && (
         <p className="text-xs text-muted-foreground line-clamp-2 mb-3">
-          {task.description}
+          {promptSummary(task.description)}
         </p>
       )}
 

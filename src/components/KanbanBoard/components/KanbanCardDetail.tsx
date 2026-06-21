@@ -8,6 +8,7 @@ import { COLUMN_CONFIG, getLabelColor } from '../constants';
 import { ALL_OPERATION_AGENT_IDS } from '@/lib/agentProcessDisplay';
 import { TaskWorkflowView } from './TaskWorkflowView';
 import { TaskRunsTimeline } from './TaskRunsTimeline'; // 재설계 ③ — 타임라인(시도 이력/이벤트, hermes)
+import StructuredPrompt from '@/components/ProjectFlowView/StructuredPrompt'; // 마크다운 렌더(읽기뷰)
 // Phase 2 PR-2-U0/U2 — 작업 상세 탭(additive). [진행] 탭 세션 배선=U2.
 import { ReadonlyTerminal } from '@/components/phase2/ReadonlyTerminal';
 import { SessionPicker } from '@/components/phase2/SessionPicker';
@@ -37,6 +38,7 @@ interface KanbanCardDetailProps {
 export function KanbanCardDetail({ task, onClose, onUpdate, onDelete }: KanbanCardDetailProps) {
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description);
+  const [editDesc, setEditDesc] = useState(false); // 기본=마크다운 렌더 읽기뷰, 토글 시 편집
   const [priority, setPriority] = useState(task.priority);
   const [requiredSkills, setRequiredSkills] = useState<string[]>(task.requiredSkills);
   const [skillInput, setSkillInput] = useState('');
@@ -214,15 +216,29 @@ export function KanbanCardDetail({ task, onClose, onUpdate, onDelete }: KanbanCa
               />
             </div>
 
-            {/* Description */}
+            {/* Description — 기본 마크다운 렌더(읽기), '편집'으로 textarea 전환 */}
             <div>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Add a description..."
-                rows={4}
-                className="w-full text-sm bg-secondary/30 border border-border/50 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none placeholder:text-muted-foreground/50"
-              />
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">설명</span>
+                <button type="button" onClick={() => setEditDesc((v) => !v)} className="text-[11px] text-primary hover:underline">
+                  {editDesc ? '✓ 보기' : '✎ 편집'}
+                </button>
+              </div>
+              {editDesc ? (
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="설명 (마크다운 지원: ## 섹션, - 목록, - [ ] 체크리스트)"
+                  rows={10}
+                  className="w-full text-sm font-mono bg-secondary/30 border border-border/50 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary/20 resize-y placeholder:text-muted-foreground/50"
+                />
+              ) : description.trim() ? (
+                <div className="bg-secondary/20 border border-border/50 rounded-xl px-4 py-3">
+                  <StructuredPrompt body={description} />
+                </div>
+              ) : (
+                <button type="button" onClick={() => setEditDesc(true)} className="w-full text-left text-sm text-muted-foreground/50 bg-secondary/30 border border-border/50 rounded-xl px-4 py-3">설명 추가…</button>
+              )}
             </div>
 
             {/* Priority */}
