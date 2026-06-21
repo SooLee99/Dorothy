@@ -10,12 +10,12 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { FileText, Users, Activity, FlaskConical, Plus, AlertCircle, CheckCircle2, XCircle, Circle, CircleDot, GitCommit, MessageSquare, TerminalSquare } from 'lucide-react';
+import { FileText, Users, Activity, FlaskConical, Plus, AlertCircle, CheckCircle2, XCircle, Circle, CircleDot, GitCommit, MessageSquare, TerminalSquare, Server as ServerIcon } from 'lucide-react';
 import { useStore } from '@/store';
 import DetailModal from '@/components/DetailModal';
 import { NewTaskModal } from '@/components/KanbanBoard/components/NewTaskModal';
 import { useElectronKanban } from '@/hooks/useElectronKanban';
-import StructuredPrompt from './StructuredPrompt';
+import StructuredPrompt, { InlineMd } from './StructuredPrompt';
 import { promptSummary, promptSections } from '@/lib/parsePrompt';
 
 type GroupKey = 'triplan' | 'bueongi';
@@ -43,6 +43,8 @@ function flowGroupKey(hay: string): GroupKey | null {
 
 interface KanbanTask { id: string; title: string; description?: string; projectId?: string; projectPath?: string; column?: string; assignedAgentId?: string | null; requiredSkills?: string[]; priority?: string; }
 interface ActAgent { agentId: string; roleId: string; name: string; status: string; projectId?: string; reports?: unknown[]; recentCommits?: unknown[]; outputTail?: string; currentTask?: string | null; statusLine?: string | null; lastActivity?: string | null; }
+interface Probe { up?: boolean; port?: number; reason?: string }
+interface ProjSvc { projectId?: string; fe?: Probe | null; be?: Probe | null; capsule?: { frontendPort?: number | null; backendPort?: number | null } }
 
 export default function ProjectFlowView() {
   const storeSelected = useStore((s) => s.selectedProject);
@@ -54,6 +56,7 @@ export default function ProjectFlowView() {
   const [tasks, setTasks] = useState<KanbanTask[]>([]);
   const [agents, setAgents] = useState<ActAgent[]>([]);
   const [tests, setTests] = useState<{ ok?: boolean; runs?: unknown[]; repo?: string; error?: string } | null>(null);
+  const [services, setServices] = useState<ProjSvc[] | null>(null); // #3 서비스 상태(fe/be 프로브)
   const [promptTask, setPromptTask] = useState<KanbanTask | null>(null);
   const [showNewTask, setShowNewTask] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -66,10 +69,11 @@ export default function ProjectFlowView() {
   const load = useCallback(async (proj: GroupKey) => {
     setLoading(true);
     try {
-      const [k, a, t] = await Promise.allSettled([
+      const [k, a, t, s] = await Promise.allSettled([
         fetch('/api/dorothy/kanban', { cache: 'no-store' }).then((r) => r.json()),
         fetch('/api/dorothy/agent-activity', { cache: 'no-store' }).then((r) => r.json()),
         fetch(`/api/dorothy/test-results?project=${proj}`, { cache: 'no-store' }).then((r) => r.json()),
+        fetch('/api/dorothy/projects', { cache: 'no-store' }).then((r) => r.json()),
       ]);
       if (k.status === 'fulfilled') {
         const all: KanbanTask[] = Array.isArray(k.value) ? k.value : (k.value.tasks ?? []);
@@ -77,6 +81,7 @@ export default function ProjectFlowView() {
       }
       if (a.status === 'fulfilled') setAgents(a.value.agents ?? []);
       if (t.status === 'fulfilled') setTests(t.value);
+      if (s.status === 'fulfilled') setServices(Array.isArray(s.value) ? s.value : (s.value.projects ?? []));
     } finally { setLoading(false); }
   }, []);
   useEffect(() => { load(active); }, [active, load]);
@@ -149,6 +154,9 @@ export default function ProjectFlowView() {
         <Kpi label="진행률" value={projTasks.length ? `${Math.round((done / projTasks.length) * 100)}%` : '—'} />
       </div>
 
+      {/* #3 서비스 상태 — 백엔드/프론트 켜짐·꺼짐·포트(칸반과 같은 /api/dorothy/projects 프로브 재사용) */}
+      <ServiceStatusRow svc={services?.find((s) => s.projectId === active) ?? null} loaded={services !== null} />
+
       {loading && <p className="text-sm text-muted-foreground">불러오는 중…</p>}
 
       {/* ① 프롬프트 */}
@@ -175,16 +183,19 @@ export default function ProjectFlowView() {
               {visibleTasks.map((t) => {
                 const sections = promptSections(t.description ?? '');
                 const summary = promptSummary(t.description ?? '');
+                // 섹션 헤딩 없으면(산문체 body) requiredSkills 로 칩 보강 — 카드 구분/정보성.
+                const chips = sections.length > 0 ? sections : (t.requiredSkills ?? []).slice(0, 4);
                 const step = stepOf(t.column);
                 const stripe = step === 2 ? 'border-l-emerald-500' : step === 1 ? 'border-l-amber-500' : 'border-l-muted-foreground/30';
                 return (
                   <button key={t.id} onClick={() => setPromptTask(t)} className={`text-left p-3 pl-3.5 rounded-xl border border-border/60 border-l-[3px] ${stripe} hover:border-primary/40 hover:bg-secondary/40 transition-colors flex flex-col gap-2`}>
-                    <span className="text-[13px] font-semibold text-foreground line-clamp-2 leading-snug">{t.title}</span>
+                    <span className="text-[13px] font-semibold text-foreground line-clamp-2 leading-snug"><InlineMd text={t.title} /></span>
                     <StatusSteps column={t.column} />
-                    {summary && <span className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">{summary}</span>}
-                    {sections.length > 0 && (
+                    {summary ? <span className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed"><InlineMd text={summary} /></span>
+                      : <span className="text-[11px] text-muted-foreground/60 italic">내용 없음</span>}
+                    {chips.length > 0 && (
                       <div className="flex flex-wrap gap-1">
-                        {sections.map((s) => <span key={s} className="text-[9px] px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">{s}</span>)}
+                        {chips.map((s) => <span key={s} className="text-[9px] px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">{s}</span>)}
                       </div>
                     )}
                   </button>
@@ -322,6 +333,32 @@ export default function ProjectFlowView() {
           onCreate={async (data) => { await createTask(data); setShowNewTask(false); load(active); }}
         />
       )}
+    </div>
+  );
+}
+
+// #3 서비스 상태 — 백엔드(Kotlin)/프론트(vite) 켜짐·꺼짐·포트. /api/dorothy/projects 프로브 재사용(관측만).
+function ServiceStatusRow({ svc, loaded }: { svc: ProjSvc | null; loaded: boolean }) {
+  const fePort = svc?.fe?.port ?? svc?.capsule?.frontendPort ?? null;
+  const bePort = svc?.be?.port ?? svc?.capsule?.backendPort ?? null;
+  const Pill = ({ label, up, port }: { label: string; up: boolean | undefined; port: number | null }) => (
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border bg-card text-xs">
+      <span className={`w-2 h-2 rounded-full ${up ? 'bg-emerald-500' : 'bg-muted-foreground/40'}`} />
+      <span className="text-foreground">{label}</span>
+      {port != null && <span className="text-muted-foreground">:{port}</span>}
+      <span className={up ? 'text-emerald-600' : 'text-muted-foreground'}>{up ? '켜짐' : '꺼짐'}</span>
+    </span>
+  );
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1"><ServerIcon className="w-3.5 h-3.5" /> 서비스 상태</span>
+      {!loaded ? <span className="text-[11px] text-muted-foreground">확인 중…</span>
+        : !svc ? <span className="text-[11px] text-muted-foreground">실시간 프로브는 데스크톱 앱에서(브라우저 미연결). <Link href="/kanban" className="text-primary hover:underline">칸반</Link>에서 제어.</span>
+        : (<>
+            <Pill label="백엔드" up={svc.be?.up} port={bePort} />
+            <Pill label="프론트" up={svc.fe?.up} port={fePort} />
+            <Link href="/kanban" className="text-[11px] text-primary hover:underline">기동/정지 →</Link>
+          </>)}
     </div>
   );
 }

@@ -49,14 +49,23 @@ export function parsePrompt(body: string): PromptBlock[] {
   return blocks;
 }
 
-/** 카드 요약 한 줄 — 첫 문단(없으면 첫 항목). */
+/** 카드 요약 한 줄 — 첫 문단의 첫 1~2문장(의미 단위). 너무 길면 단어 경계서 자름. */
 export function promptSummary(body: string): string {
+  let raw = '';
   for (const b of parsePrompt(body)) {
-    if (b.type === 'para') return b.text;
-    if (b.type === 'bullets' && b.items[0]) return b.items[0];
-    if (b.type === 'numbered' && b.items[0]) return b.items[0];
+    if (b.type === 'para') { raw = b.text; break; }
+    if (b.type === 'bullets' && b.items[0]) { raw = b.items[0]; break; }
+    if (b.type === 'numbered' && b.items[0]) { raw = b.items[0]; break; }
   }
-  return '';
+  if (!raw) return '';
+  // 앞쪽 마크다운/번호 기호 제거.
+  raw = raw.replace(/^[#>\-*•\d.()\s]+/, '').trim();
+  if (raw.length <= 160) return raw;
+  // 첫 문장(마침표/。) 우선 — 의미 살려 끊기.
+  const sent = raw.match(/^.*?[.。](\s|$)/);
+  if (sent && sent[0].trim().length >= 30) return sent[0].trim();
+  // 아니면 단어 경계서 ~150자.
+  return raw.slice(0, 150).replace(/\s+\S*$/, '') + '…';
 }
 
 /** 카드에 보일 섹션 칩 — 헤딩 텍스트들(최대 n개). */
