@@ -4,7 +4,7 @@
  * PR-2-U0 — ProjectCard (순수 presentational). 클릭 → onSelect(필터 배선은 U1).
  * ★G2: fe/be '응답함'은 서버 up:true 일 때만. ★G3: git 실측 + '마지막 확인 N초 전'. 부재→'확인 불가'.
  */
-import { Server, Monitor, GitBranch } from 'lucide-react';
+import { Server, Monitor, GitBranch, KeyRound } from 'lucide-react';
 import { formatRelative } from '@/components/RunCommon/badges';
 import { probeView, gitView, type ProbeLike, type GitLike } from './lib';
 
@@ -60,12 +60,22 @@ function ProbeRow({ icon, label, probe, control }: { icon: React.ReactNode; labe
   );
 }
 
-export function ProjectCard({ project, onSelect, selected = false, onServiceAction, pendingRoles }: {
+/** capsule fe/be 모델 밖의 추가 서비스(예: triplan soo-auth :18080). 있을 때만 행 렌더. */
+export interface ExtraService {
+  label: string;        // 예: 'AUTH'
+  up: boolean;
+  pending?: boolean;
+  port?: number;
+  onAct: (action: ServiceAction) => void;
+}
+
+export function ProjectCard({ project, onSelect, selected = false, onServiceAction, pendingRoles, extraServices }: {
   project: ProjectCardData;
   onSelect?: (project: ProjectCardData) => void;
   selected?: boolean;
   onServiceAction?: (projectId: string, role: ServiceRole, action: ServiceAction) => void;
   pendingRoles?: Set<string>; // `${projectId}:${role}` 진행중
+  extraServices?: ExtraService[]; // capsule 밖 추가 서비스(soo-auth 등)
 }) {
   const g = gitView(project.git);
   const ctrl = (role: ServiceRole, probe?: ProbeLike) => {
@@ -98,6 +108,15 @@ export function ProjectCard({ project, onSelect, selected = false, onServiceActi
       <div className="space-y-1.5">
         <ProbeRow icon={<Monitor className="w-3 h-3" />} label="FE" probe={project.fe} control={ctrl('fe', project.fe)} />
         <ProbeRow icon={<Server className="w-3 h-3" />} label="BE" probe={project.be} control={ctrl('be', project.be)} />
+        {extraServices?.map((s) => (
+          <ProbeRow
+            key={s.label}
+            icon={<KeyRound className="w-3 h-3" />}
+            label={s.label}
+            probe={{ observed: true, up: s.up, port: s.port } as ProbeLike}
+            control={<ServiceControl up={s.up} pending={!!s.pending} onAct={s.onAct} />}
+          />
+        ))}
       </div>
 
       <div className="pt-2 border-t border-border/50 text-xs">

@@ -22,6 +22,9 @@ export function ProjectsStrip({
   const [projects, setProjects] = useState<ProjectCardData[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<Set<string>>(new Set());
+  // triplan soo-auth(:18080) — capsule fe/be 밖 추가 백엔드. 별도 라우트로 상태/제어.
+  const [authUp, setAuthUp] = useState<boolean | null>(null);
+  const [authPending, setAuthPending] = useState(false);
   // 결과 팝업: 클릭 시 열려 어떻게 됐는지(메시지·로그·라이브 상태)를 보여준다.
   const [modal, setModal] = useState<{ projectId: string; role: ServiceRole; action: ServiceAction } | null>(null);
   const [modalResult, setModalResult] = useState<ServiceControlResult | null>(null);
@@ -37,7 +40,26 @@ export function ProjectsStrip({
     } catch {
       setError('프로젝트를 가져오지 못했습니다');
     }
+    // soo-auth 상태(triplan 인증 서버) — 실패해도 프로젝트 로딩엔 영향 없음.
+    try {
+      const r = await fetch('/api/dorothy/services/soo-auth', { cache: 'no-store' });
+      const a = await r.json();
+      setAuthUp(typeof a?.up === 'boolean' ? a.up : null);
+    } catch { setAuthUp(null); }
   }, []);
+
+  // soo-auth 기동/정지(triplan 전용). 별도 라우트 → 스크립트 실행/포트 종료.
+  const handleAuthAction = useCallback(async (action: ServiceAction) => {
+    setAuthPending(true);
+    try {
+      await fetch('/api/dorothy/services/soo-auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+    } catch { /* 무시 — 폴링이 상태 반영 */ }
+    finally { setAuthPending(false); load(); }
+  }, [load]);
 
   useEffect(() => {
     load();
@@ -119,6 +141,10 @@ export function ProjectsStrip({
                 onSelect={handlePick}
                 onServiceAction={handleServiceAction}
                 pendingRoles={pending}
+                extraServices={p.projectId === 'triplan' ? [{
+                  label: 'AUTH', up: authUp === true, pending: authPending, port: 18080,
+                  onAct: () => handleAuthAction(authUp ? 'stop' : 'start'),
+                }] : undefined}
               />
             </div>
           ))}
